@@ -1,0 +1,52 @@
+name:            configurator
+version:         0.0.0.1
+license:         BSD3
+license-file:    LICENSE
+category:        Configuration, Data
+copyright:       Copyright 2011 MailRank, Inc.
+author:          Bryan O'Sullivan <bos@mailrank.com>
+maintainer:      Bryan O'Sullivan <bos@mailrank.com>
+stability:       experimental
+tested-with:     GHC == 7.0.3
+synopsis:        Configuration management
+cabal-version:   >= 1.8
+homepage:        http://github.com/mailrank/configurator
+bug-reports:     http://github.com/mailrank/configurator/issues
+build-type:      Simple
+description:
+  A configuration management library for programs and daemons.
+
+extra-source-files:
+    README.markdown
+
+flag developer
+  description: operate in developer mode
+  default: False
+
+library
+  exposed-modules:
+    Data.Configurator
+
+  other-modules:
+    Data.Configurator.Parser
+    Data.Configurator.Types.Internal
+
+  build-depends:
+    attoparsec-text >= 0.8.5.0,
+    base == 4.*,
+    text >= 0.11.0.2,
+    unordered-containers	
+
+  if flag(developer)
+    ghc-options: -Werror
+    ghc-prof-options: -auto-all
+
+  ghc-options:      -Wall
+
+source-repository head
+  type:     git
+  location: http://github.com/mailrank/configurator
+
+source-repository head
+  type:     mercurial
+  location: http://bitbucket.org/bos/configurator
