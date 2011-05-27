@@ -3,9 +3,11 @@
 module Data.Configurator.Parser
     (
       topLevel
+    , interp
     ) where
 
 import Control.Applicative
+import Control.Exception (throw)
 import Control.Monad (when)
 import Data.Attoparsec.Text as A
 import Data.Bits (shiftL)
@@ -21,10 +23,14 @@ topLevel :: Parser [Directive]
 topLevel = seriesOf directive <* endOfInput
   
 directive :: Parser Directive
-directive = string "import" *> skipSpace *> (Import <$> string_)
-        <|> Bind <$> (ident <* skipSpace) <*>
-                     ((char '=' *> skipSpace *> atom <* skipHSpace) <|>
-                      (brackets '{' '}' (Group <$> seriesOf directive)))
+directive =
+  mconcat [
+    string "import" *> skipSpace *> (Import <$> string_)
+  , Bind <$> try (ident <* skipSpace <* char '=' <* skipSpace)
+         <*> value <* skipHSpace
+  , Group <$> try (ident <* skipSpace <* char '{' <* skipSpace)
+          <*> seriesOf directive <* skipSpace <* char '}' <* skipHSpace
+  ]
 
 seriesOf :: Parser a -> Parser [a]
 seriesOf p =
@@ -34,24 +40,25 @@ seriesOf p =
 skipHSpace :: Parser ()
 skipHSpace = skipWhile $ \c -> c == ' ' || c == '\t'
 
-ident :: Parser Text
+ident :: Parser Name
 ident = do
   n <- T.cons <$> satisfy isAlpha <*> A.takeWhile isCont
   when (n == "import") $
-    fail $ "reserved word (" ++ show n ++ ") used as identifier"
+    throw (ParseError "" $ "reserved word (" ++ show n ++ ") used as identifier")
   return n
  where
   isCont c = isAlphaNum c || c == '_' || c == '-'
 
-atom :: Parser Value
-atom = mconcat [
+value :: Parser Value
+value = mconcat [
           string "on" *> pure (Bool True)
         , string "off" *> pure (Bool False)
         , string "true" *> pure (Bool True)
         , string "false" *> pure (Bool False)
         , String <$> string_
-        , list
         , Number <$> decimal
+        , List <$> brackets '[' ']'
+                   ((value <* skipSpace) `sepBy` (char ',' <* skipSpace))
         ]
 
 string_ :: Parser Text
@@ -67,10 +74,6 @@ string_ = do
 
 brackets :: Char -> Char -> Parser a -> Parser a
 brackets open close p = char open *> skipSpace *> p <* skipSpace <* char close
-
-list :: Parser Value
-list = List <$> brackets '[' ']'
-       ((atom <* skipSpace) `sepBy` (char ',' <* skipSpace))
 
 embed :: Parser a -> Text -> Parser a
 embed p s = case parseOnly p s of
@@ -92,7 +95,7 @@ unescape = fmap (L.toStrict . toLazyText) . embed (p mempty)
             '"'  -> cont '"'
             '\\' -> cont '\\'
             _    -> cont =<< hexQuad
-    done <- A.atEnd
+    done <- atEnd
     if done
       then return (acc `mappend` fromText h)
       else rest
@@ -107,4 +110,19 @@ hexQuad = do
       if a <= 0xdbff && b >= 0xdc00 && b <= 0xdfff
         then return $! chr (((a - 0xd800) `shiftL` 10) + (b - 0xdc00) + 0x10000)
         else fail "invalid UTF-16 surrogates"
-
+                   
+interp :: Parser [Interp]
+interp = p []
+ where
+  p acc = do
+    h <- Literal <$> A.takeWhile (/='$')
+    let rest = do
+          let cont x = p (x : h : acc)
+          c <- char '$' *> satisfy (\c -> c == '$' || c == '(')
+          case c of
+            '$' -> cont (Literal (T.singleton '$'))
+            _   -> (cont . Interp) =<< A.takeWhile1 (/=')') <* char ')'
+    done <- atEnd
+    if done
+      then return (h : acc)
+      else rest
