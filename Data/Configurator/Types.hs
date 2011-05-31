@@ -13,7 +13,7 @@ module Data.Configurator.Types
       AutoConfig(..)
     , Config(cfgPaths)
     , Name
-    , Value
+    , Value(..)
     , Configured(..)
     ) where
 

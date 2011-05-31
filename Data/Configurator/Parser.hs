@@ -141,9 +141,9 @@ hexQuad = do
                    
 -- | Parse a string interpolation spec.
 --
--- The sequence @$$@ is treated as a single @$@ sign.  The sequence
--- @$(@ begins a section to be interpolated, and @)@ ends it.
-interp :: Parser [Interp]
+-- The sequence @$$@ is treated as a single @$@ character.  The
+-- sequence @$(@ begins a section to be interpolated, and @)@ ends it.
+interp :: Parser [Interpolate]
 interp = reverse <$> p []
  where
   p acc = do
@@ -153,7 +153,7 @@ interp = reverse <$> p []
           c <- char '$' *> satisfy (\c -> c == '$' || c == '(')
           case c of
             '$' -> cont (Literal (T.singleton '$'))
-            _   -> (cont . Interp) =<< A.takeWhile1 (/=')') <* char ')'
+            _   -> (cont . Interpolate) =<< A.takeWhile1 (/=')') <* char ')'
     done <- atEnd
     if done
       then return (h : acc)
