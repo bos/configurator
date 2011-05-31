@@ -21,7 +21,7 @@ module Data.Configurator.Types.Internal
     , Path
     , Directive(..)
     , ConfigError(..)
-    , Interp(..)
+    , Interpolate(..)
     ) where
 
 import Control.Exception
@@ -40,8 +40,11 @@ data Config = Config {
     }
 
 -- | This class represents types that can be automatically and safely
--- converted from a 'Value'.  If conversion fails, 'Nothing' is
--- returned.
+-- converted /from/ a 'Value' /to/ a destination type.  If conversion
+-- fails because the types are not compatible, 'Nothing' is returned.
+--
+-- For an example of compatibility, a 'Value' of 'Bool' 'True' cannot
+-- be 'convert'ed to an 'Int'.
 class Configured a where
     convert :: Value -> Maybe a
 
@@ -74,7 +77,7 @@ type Path = Text
 -- | A name-value binding.
 type Binding = (Name,Value)
 
--- | A directive in a config file.
+-- | A directive in a configuration file.
 data Directive = Import Path
                | Bind Name Value
                | Group Name [Directive]
@@ -82,12 +85,36 @@ data Directive = Import Path
 
 -- | A value in a 'Config'.
 data Value = Bool Bool
+           -- ^ A Boolean. Represented in a configuration file as @on@
+           -- or @off@, @true@ or @false@ (case sensitive).
            | String Text
+           -- ^ A Unicode string.  Represented in a configuration file
+           -- as text surrounded by double quotes.
+           --
+           -- Escape sequences:
+           --
+           -- * @\\n@ - newline
+           --
+           -- * @\\r@ - carriage return
+           --
+           -- * @\\t@ - horizontal tab
+           --
+           -- * @\\\\@ - backslash
+           --
+           -- * @\\\"@ - quotes
+           --
+           -- * @\\u@/xxxx/ - Unicode character, encoded as four
+           --   hexadecimal digits
+           --
+           -- * @\\u@/xxxx/@\\u@/xxxx/ - Unicode character (as two
+           --   UTF-16 surrogates)
            | Number Int
+           -- ^ Integer.
            | List [Value]
+           -- ^ Heterogeneous list.
              deriving (Eq, Show, Typeable, Data)
 
 -- | An interpolation directive.
-data Interp = Literal Text
-            | Interp Text
-              deriving (Eq, Show)
+data Interpolate = Literal Text
+                 | Interpolate Text
+                   deriving (Eq, Show)

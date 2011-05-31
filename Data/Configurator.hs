@@ -34,7 +34,6 @@ import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
 import Data.Configurator.Types.Internal
 import Data.IORef (newIORef, readIORef, writeIORef)
-import Data.List (foldl')
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import Data.Monoid (mconcat)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
@@ -65,7 +64,7 @@ load :: [FilePath] -> IO Config
 load paths0 = do
   let paths = map T.pack paths0
   ds <- loadFiles paths
-  m <- newIORef $ flatten paths ds
+  m <- newIORef =<< flatten paths ds
   return Config {
                cfgPaths = paths
              , cfgMap = m
@@ -74,7 +73,8 @@ load paths0 = do
 -- | Forcibly reload a 'Config'. Throws an exception on error, such as
 -- if files no longer exist or contain errors.
 reload :: Config -> IO ()
-reload Config{..} = writeIORef cfgMap . flatten cfgPaths =<< loadFiles cfgPaths
+reload Config{..} =
+    writeIORef cfgMap =<< flatten cfgPaths =<< loadFiles cfgPaths
 
 -- | Defaults for automatic 'Config' reloading when using
 -- 'autoReload'.  The 'interval' is one second, while the 'onError'
@@ -132,28 +132,32 @@ display Config{..} = print =<< readIORef cfgMap
 getMap :: Config -> IO (H.HashMap Name Value)
 getMap = readIORef . cfgMap
 
-flatten :: [Path] -> H.HashMap Path [Directive] -> H.HashMap Name Value
-flatten roots files = foldl' (directive "") H.empty .
+flatten :: [Path] -> H.HashMap Path [Directive] -> IO (H.HashMap Name Value)
+flatten roots files = foldM (directive "") H.empty .
                       concat . catMaybes . map (`H.lookup` files) $ roots
  where
-  directive prefix m (Bind name value) = H.insert (T.append prefix name) value m
-  directive prefix m (Group name xs) = foldl' (directive prefix') m xs
-    where prefix' = T.concat [prefix, name, "."]
+  directive prefix m (Bind name (String value)) = do
+      v <- interpolate value m
+      return $! H.insert (T.append prefix name) (String v) m
+  directive prefix m (Bind name value) =
+      return $! H.insert (T.append prefix name) value m
+  directive prefix m (Group name xs) = foldM (directive prefix') m xs
+      where prefix' = T.concat [prefix, name, "."]
   directive prefix m (Import path) =
       case H.lookup path files of
-        Just ds -> foldl' (directive prefix) m ds
-        _       -> m
+        Just ds -> foldM (directive prefix) m ds
+        _       -> return m
 
 interpolate :: T.Text -> H.HashMap Name Value -> IO T.Text
 interpolate s env
     | "$(" `T.isInfixOf` s =
       case T.parseOnly interp s of
-        Left _   -> undefined
+        Left err   -> throwIO $ ParseError "" err
         Right xs -> (L.toStrict . toLazyText . mconcat) <$> mapM interpret xs
     | otherwise = return s
  where
   interpret (Literal x)   = return (fromText x)
-  interpret (Interp name) =
+  interpret (Interpolate name) =
       case H.lookup name env of
         Just (String x) -> return (fromText x)
         Just (Number n) -> return (decimal n)
@@ -161,7 +165,8 @@ interpolate s env
         _ -> do
           e <- try . getEnv . T.unpack $ name
           case e of
-            Left (_::SomeException) -> error "no such variable"
+            Left (_::SomeException) ->
+                throwIO . ParseError "" $ "no such variable " ++ show name
             Right x -> return (fromString x)
 
 importsOf :: [Directive] -> [Path]
