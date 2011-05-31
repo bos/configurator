@@ -1,43 +1,136 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, RecordWildCards, ScopedTypeVariables #-}
+
+-- |
+-- Module:      Data.Configurator
+-- Copyright:   (c) 2011 MailRank, Inc.
+-- License:     BSD3
+-- Maintainer:  Bryan O'Sullivan <bos@mailrank.com>
+-- Stability:   experimental
+-- Portability: portable
+--
+-- Types for working with configuration files.
 
 module Data.Configurator
     (
-      load
+    -- * Loading configuration data
+      autoReload
+    , autoConfig
+    -- * Lookup functions
+    , lookup
+    , lookupDefault
+    -- * Low-level loading functions
+    , load
+    , reload
+    -- * Helper functions
+    , display
+    , getMap
     ) where
 
-import Data.List
-import Control.Exception
-import Control.Applicative
-import Data.Monoid
-import Control.Monad
+import Control.Applicative ((<$>))
+import Control.Concurrent (ThreadId, forkIO, threadDelay)
+import Control.Exception (SomeException, catch, evaluate, throwIO, try)
+import Control.Monad (foldM, join)
+import Data.Configurator.Instances ()
+import Data.Configurator.Parser (interp, topLevel)
+import Data.Configurator.Types.Internal
+import Data.IORef (newIORef, readIORef, writeIORef)
+import Data.List (foldl')
+import Data.Maybe (catMaybes, fromMaybe, isJust)
+import Data.Monoid (mconcat)
+import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
+import Data.Text.Lazy.Builder.Int (decimal)
+import Prelude hiding (catch, lookup)
+import System.Directory (getModificationTime)
+import System.Environment (getEnv)
+import System.Time (ClockTime(..))
+import qualified Data.Attoparsec.Text as T
+import qualified Data.Attoparsec.Text.Lazy as L
+import qualified Data.HashMap.Lazy as H
+import qualified Data.Text as T
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
-import Data.Text.Lazy.Builder.Int (decimal)
-import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
-import qualified Data.Attoparsec.Text.Lazy as L
-import qualified Data.Attoparsec.Text as T
-import System.Environment (getEnv)
-import Data.Configurator.Parser
-import Data.Configurator.Types.Internal
-import System.IO
-import qualified Data.HashMap.Lazy as H
-import Data.Maybe
-import Prelude hiding (catch)
-import qualified Data.Text as T
 
 loadFiles :: [Path] -> IO (H.HashMap Path [Directive])
 loadFiles = foldM go H.empty
  where
    go seen path = do
-     ds <- loadOne (T.unpack path)
+     ds <- loadOne . T.unpack =<< interpolate path H.empty
      let seen' = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
      foldM go seen' . filter notSeen . importsOf $ ds
   
-load :: [Path] -> IO (H.HashMap Name Value)
-load paths = do
+-- | Create a 'Config' from the contents of the named files. Throws an
+-- exception on error, such as if files do not exist or contain errors.
+load :: [FilePath] -> IO Config
+load paths0 = do
+  let paths = map T.pack paths0
   ds <- loadFiles paths
-  return (flatten paths ds)
+  m <- newIORef $ flatten paths ds
+  return Config {
+               cfgPaths = paths
+             , cfgMap = m
+             }
+
+-- | Forcibly reload a 'Config'. Throws an exception on error, such as
+-- if files no longer exist or contain errors.
+reload :: Config -> IO ()
+reload Config{..} = writeIORef cfgMap . flatten cfgPaths =<< loadFiles cfgPaths
+
+-- | Defaults for automatic 'Config' reloading when using
+-- 'autoReload'.  The 'interval' is one second, while the 'onError'
+-- action ignores its argument and does nothing.
+autoConfig :: AutoConfig
+autoConfig = AutoConfig {
+               interval = 1
+             , onError = const $ return ()
+             }
+
+-- | Load a 'Config' from the given 'FilePath's.
+--
+-- At intervals, a thread checks for modifications to both the
+-- original files and any files they refer to in @import@ directives,
+-- and reloads the 'Config' if any files have been modified.
+--
+-- If the initial attempt to load the configuration files fails, an
+-- exception is thrown.  If the initial load succeeds, but a
+-- subsequent attempt fails, the 'onError' handler is invoked.
+autoReload :: AutoConfig
+           -- ^ Directions for when to reload and how to handle
+           -- errors.
+           -> [FilePath]
+           -- ^ Configuration files to load.
+           -> IO (Config, ThreadId)
+autoReload AutoConfig{..} _
+    | interval < 1 = error "autoReload: negative interval"
+autoReload _ []    = error "autoReload: no paths to load"
+autoReload AutoConfig{..} paths = do
+  cfg <- load paths
+  let loop newest = do
+        threadDelay (max interval 1 * 1000000)
+        newest' <- getNewest paths
+        if newest' == newest
+          then loop newest
+          else (reload cfg `catch` onError) >> loop newest'
+  tid <- forkIO $ loop =<< getNewest paths
+  return (cfg, tid)
+  
+getNewest :: [FilePath] -> IO ClockTime
+getNewest = flip foldM (TOD 0 0) $ \t -> fmap (max t) . getModificationTime
+
+lookup :: Configured a => Config -> Name -> IO (Maybe a)
+lookup Config{..} name =
+    (join . fmap convert . H.lookup name) <$> readIORef cfgMap
+
+lookupDefault :: Configured a => a -> Config -> Name -> IO a
+lookupDefault def cfg name = fromMaybe def <$> lookup cfg name
+
+-- | Perform a simple dump of a 'Config' to @stdout@.
+display :: Config -> IO ()
+display Config{..} = print =<< readIORef cfgMap
+
+-- | Fetch the 'H.HashMap' that maps names to values.
+getMap :: Config -> IO (H.HashMap Name Value)
+getMap = readIORef . cfgMap
 
 flatten :: [Path] -> H.HashMap Path [Directive] -> H.HashMap Name Value
 flatten roots files = foldl' (directive "") H.empty .

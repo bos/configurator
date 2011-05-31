@@ -1,5 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- |
+-- Module:      Data.Configurator.Parser
+-- Copyright:   (c) 2011 MailRank, Inc.
+-- License:     BSD3
+-- Maintainer:  Bryan O'Sullivan <bos@mailrank.com>
+-- Stability:   experimental
+-- Portability: portable
+--
+-- A parser for configuration files.
+
 module Data.Configurator.Parser
     (
       topLevel
@@ -11,7 +21,7 @@ import Control.Exception (throw)
 import Control.Monad (when)
 import Data.Attoparsec.Text as A
 import Data.Bits (shiftL)
-import Data.Char (chr, isAlpha, isAlphaNum)
+import Data.Char (chr, isAlpha, isAlphaNum, isSpace)
 import Data.Configurator.Types.Internal
 import Data.Monoid (Monoid(..))
 import Data.Text (Text)
@@ -20,25 +30,43 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as L
 
 topLevel :: Parser [Directive]
-topLevel = seriesOf directive <* endOfInput
+topLevel = directives <* skipLWS <* endOfInput
   
 directive :: Parser Directive
 directive =
   mconcat [
-    string "import" *> skipSpace *> (Import <$> string_)
-  , Bind <$> try (ident <* skipSpace <* char '=' <* skipSpace)
-         <*> value <* skipHSpace
-  , Group <$> try (ident <* skipSpace <* char '{' <* skipSpace)
-          <*> seriesOf directive <* skipSpace <* char '}' <* skipHSpace
+    string "import" *> skipLWS *> (Import <$> string_)
+  , Bind <$> try (ident <* skipLWS <* char '=' <* skipLWS) <*> value
+  , Group <$> try (ident <* skipLWS <* char '{' <* skipLWS)
+          <*> directives <* skipLWS <* char '}'
   ]
 
-seriesOf :: Parser a -> Parser [a]
-seriesOf p =
-    (p <* skipHSpace) `sepBy` (endItem <* skipSpace) <* optional endItem
-  where endItem = satisfy $ \c -> c == '\n' || c == ';'
+directives :: Parser [Directive]
+directives = (skipLWS *> directive <* skipHWS) `sepBy`
+             (satisfy $ \c -> c == '\r' || c == '\n')
 
-skipHSpace :: Parser ()
-skipHSpace = skipWhile $ \c -> c == ' ' || c == '\t'
+data Skip = Space | Comment
+
+-- | Skip lines, comments, or horizontal white space.
+skipLWS :: Parser ()
+skipLWS = scan Space go *> pure ()
+  where go Space c | isSpace c = Just Space
+        go Space '#'           = Just Comment
+        go Space _             = Nothing
+        go Comment '\r'        = Just Space
+        go Comment '\n'        = Just Space
+        go Comment _           = Just Comment
+
+-- | Skip comments or horizontal white space.
+skipHWS :: Parser ()
+skipHWS = scan Space go *> pure ()
+  where go Space ' '           = Just Space
+        go Space '\t'          = Just Space
+        go Space '#'           = Just Comment
+        go Space _             = Nothing
+        go Comment '\r'        = Nothing
+        go Comment '\n'        = Nothing
+        go Comment _           = Just Comment
 
 ident :: Parser Name
 ident = do
@@ -58,7 +86,7 @@ value = mconcat [
         , String <$> string_
         , Number <$> decimal
         , List <$> brackets '[' ']'
-                   ((value <* skipSpace) `sepBy` (char ',' <* skipSpace))
+                   ((value <* skipLWS) `sepBy` (char ',' <* skipLWS))
         ]
 
 string_ :: Parser Text
@@ -73,7 +101,7 @@ string_ = do
   isChar _ c    = Just (c == '\\')
 
 brackets :: Char -> Char -> Parser a -> Parser a
-brackets open close p = char open *> skipSpace *> p <* skipSpace <* char close
+brackets open close p = char open *> skipLWS *> p <* char close
 
 embed :: Parser a -> Text -> Parser a
 embed p s = case parseOnly p s of
@@ -111,8 +139,12 @@ hexQuad = do
         then return $! chr (((a - 0xd800) `shiftL` 10) + (b - 0xdc00) + 0x10000)
         else fail "invalid UTF-16 surrogates"
                    
+-- | Parse a string interpolation spec.
+--
+-- The sequence @$$@ is treated as a single @$@ sign.  The sequence
+-- @$(@ begins a section to be interpolated, and @)@ ends it.
 interp :: Parser [Interp]
-interp = p []
+interp = reverse <$> p []
  where
   p acc = do
     h <- Literal <$> A.takeWhile (/='$')
