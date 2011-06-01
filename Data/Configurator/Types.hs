@@ -15,6 +15,9 @@ module Data.Configurator.Types
     , Name
     , Value(..)
     , Configured(..)
+    -- * Notification of configuration changes
+    , Pattern
+    , ChangeHandler
     ) where
 
 import Data.Configurator.Types.Internal

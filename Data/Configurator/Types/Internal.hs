@@ -22,22 +22,78 @@ module Data.Configurator.Types.Internal
     , Directive(..)
     , ConfigError(..)
     , Interpolate(..)
+    , Pattern(..)
+    , exact
+    , prefix
+    , ChangeHandler
     ) where
 
 import Control.Exception
 import Data.Data (Data)
+import Data.Hashable (Hashable(..))
 import Data.IORef (IORef)
+import Data.List (isSuffixOf)
+import Data.String (IsString(..))
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import Prelude hiding (lookup)
 import qualified Data.HashMap.Lazy as H
 
 -- | Configuration data.
 data Config = Config {
-      cfgPaths :: [Path]
+      cfgAuto :: Maybe AutoConfig
+    , cfgPaths :: [Path]
     -- ^ The files from which the 'Config' was loaded.
     , cfgMap :: IORef (H.HashMap Name Value)
+    , cfgSubs :: IORef (H.HashMap Pattern [ChangeHandler])
     }
+
+-- | An action to be invoked if a configuration property is changed.
+type ChangeHandler = Name
+                   -- ^ Name of the changed property.
+                   -> Maybe Value
+                   -- ^ Its new value, or 'Nothing' if it has
+                   -- vanished.
+                   -> IO ()
+
+-- | A pattern specifying the name of a property that has changed.
+--
+-- This type is an instance of the 'IsString' class.  If you use the
+-- @OverloadedStrings@ language extension and want to write a
+-- 'prefix'-matching pattern as a literal string, do so by suffixing
+-- it with \"@.*@\", for example as follows:
+--
+-- > "foo.*"
+--
+-- If a pattern written as a literal string does not end with
+-- \"@.*@\", it is assumed to be 'exact'.
+data Pattern = Exact Name
+             -- ^ An exact match.
+             | Prefix Name
+             -- ^ A prefix match.  Given @'Prefix' \"foo\"@, this will
+             -- match @\"foo.bar\"@, but not @\"foo\"@ or
+             -- @\"foobar\"@.
+               deriving (Eq, Show, Typeable, Data)
+
+-- | A pattern that must match exactly.
+exact :: Text -> Pattern
+exact = Exact
+
+-- | A pattern that matches on a prefix of a property name.  Given
+-- @\"foo\"@, this will match @\"foo.bar\"@, but not @\"foo\"@ or
+-- @\"foobar\"@.
+prefix :: Text -> Pattern
+prefix p = Prefix (p `T.snoc` '.')
+
+instance IsString Pattern where
+    fromString s
+        | ".*" `isSuffixOf` s = Prefix . T.init . T.pack $ s
+        | otherwise           = Exact (T.pack s)
+
+instance Hashable Pattern where
+    hash (Exact n)  = hash n
+    hash (Prefix n) = hash n
 
 -- | This class represents types that can be automatically and safely
 -- converted /from/ a 'Value' /to/ a destination type.  If conversion

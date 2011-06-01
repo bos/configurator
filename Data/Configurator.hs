@@ -38,6 +38,11 @@ module Data.Configurator
     -- * Lookup functions
     , lookup
     , lookupDefault
+    -- * Notification of configuration changes
+    -- $notify
+    , prefix
+    , exact
+    , subscribe
     -- * Low-level loading functions
     , load
     , reload
@@ -49,11 +54,11 @@ module Data.Configurator
 import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId, forkIO, threadDelay)
 import Control.Exception (SomeException, catch, evaluate, throwIO, try)
-import Control.Monad (foldM, join)
+import Control.Monad (foldM, forM_, join, when)
 import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
 import Data.Configurator.Types.Internal
-import Data.IORef (newIORef, readIORef, writeIORef)
+import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import Data.Monoid (mconcat)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
@@ -61,6 +66,7 @@ import Data.Text.Lazy.Builder.Int (decimal)
 import Prelude hiding (catch, lookup)
 import System.Directory (getModificationTime)
 import System.Environment (getEnv)
+import System.IO (hPutStrLn, stderr)
 import System.Time (ClockTime(..))
 import qualified Data.Attoparsec.Text as T
 import qualified Data.Attoparsec.Text.Lazy as L
@@ -85,20 +91,28 @@ loadFiles = foldM go H.empty
 -- first time they are opened, so you can specify a file name such as
 -- @\"$(HOME)/myapp.cfg\"@.
 load :: [FilePath] -> IO Config
-load paths0 = do
+load = load' Nothing
+
+load' :: Maybe AutoConfig -> [FilePath] -> IO Config
+load' auto paths0 = do
   let paths = map T.pack paths0
   ds <- loadFiles paths
   m <- newIORef =<< flatten paths ds
+  s <- newIORef H.empty
   return Config {
-               cfgPaths = H.keys ds
-             , cfgMap = m
-             }
+                cfgAuto = auto
+              , cfgPaths = H.keys ds
+              , cfgMap = m
+              , cfgSubs = s
+              }
 
 -- | Forcibly reload a 'Config'. Throws an exception on error, such as
 -- if files no longer exist or contain errors.
 reload :: Config -> IO ()
-reload Config{..} =
-    writeIORef cfgMap =<< flatten cfgPaths =<< loadFiles cfgPaths
+reload cfg@Config{..} = do
+  m' <- flatten cfgPaths =<< loadFiles cfgPaths
+  m <- atomicModifyIORef cfgMap $ \m -> (m', m)
+  notifySubscribers cfg m m' =<< readIORef cfgSubs
 
 -- | Defaults for automatic 'Config' reloading when using
 -- 'autoReload'.  The 'interval' is one second, while the 'onError'
@@ -131,8 +145,8 @@ autoReload :: AutoConfig
 autoReload AutoConfig{..} _
     | interval < 1 = error "autoReload: negative interval"
 autoReload _ []    = error "autoReload: no paths to load"
-autoReload AutoConfig{..} paths = do
-  cfg <- load paths
+autoReload auto@AutoConfig{..} paths = do
+  cfg <- load' (Just auto) paths
   let loop newest = do
         threadDelay (max interval 1 * 1000000)
         newest' <- getNewest paths
@@ -174,16 +188,16 @@ flatten :: [Path] -> H.HashMap Path [Directive] -> IO (H.HashMap Name Value)
 flatten roots files = foldM (directive "") H.empty .
                       concat . catMaybes . map (`H.lookup` files) $ roots
  where
-  directive prefix m (Bind name (String value)) = do
+  directive pfx m (Bind name (String value)) = do
       v <- interpolate value m
-      return $! H.insert (T.append prefix name) (String v) m
-  directive prefix m (Bind name value) =
-      return $! H.insert (T.append prefix name) value m
-  directive prefix m (Group name xs) = foldM (directive prefix') m xs
-      where prefix' = T.concat [prefix, name, "."]
-  directive prefix m (Import path) =
+      return $! H.insert (T.append pfx name) (String v) m
+  directive pfx m (Bind name value) =
+      return $! H.insert (T.append pfx name) value m
+  directive pfx m (Group name xs) = foldM (directive pfx') m xs
+      where pfx' = T.concat [pfx, name, "."]
+  directive pfx m (Import path) =
       case H.lookup path files of
-        Just ds -> foldM (directive prefix) m ds
+        Just ds -> foldM (directive pfx) m ds
         _       -> return m
 
 interpolate :: T.Text -> H.HashMap Name Value -> IO T.Text
@@ -224,12 +238,45 @@ loadOne path = do
     Left err -> throwIO (ParseError path err)
     Right ds -> return ds
 
+-- | Subscribe for notifications.  The given action will be invoked
+-- when any change occurs to a configuration property matching the
+-- supplied pattern.
+subscribe :: Config -> Pattern -> ChangeHandler -> IO ()
+subscribe Config{..} pat act = do
+  m' <- atomicModifyIORef cfgSubs $ \m ->
+        let m' = H.insertWith (++) pat [act] m in (m', m')
+  evaluate m' >> return ()
+
+notifySubscribers :: Config -> H.HashMap Name Value -> H.HashMap Name Value
+                  -> H.HashMap Pattern [ChangeHandler] -> IO ()
+notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
+ where
+  changedOrGone = H.foldrWithKey check [] m
+      where check n v nvs = case H.lookup n m' of
+                              Just v' | v /= v'   -> (n,Just v'):nvs
+                                      | otherwise -> nvs
+                              _                   -> (n,Nothing):nvs
+  new = H.foldrWithKey check [] m'
+      where check n v nvs = case H.lookup n m of
+                              Nothing -> (n,v):nvs
+                              _       -> nvs
+  notify p n v a = a n v `catch` \(e::SomeException) ->
+                   maybe report onError cfgAuto e
+    where report e = hPutStrLn stderr $ "ChangeHandler threw exception for " ++
+                     show (p,n) ++ ": " ++ show e
+  go p@(Exact n) acts next = (const next =<<) $ do
+    let v' = H.lookup n m'
+    when (H.lookup n m /= v') . mapM_ (notify p n v') $ acts
+  go p@(Prefix n) acts next = (const next =<<) $ do
+    let matching = filter (T.isPrefixOf n . fst)
+    forM_ (matching new) $ \(n',v) -> mapM_ (notify p n' (Just v)) acts
+    forM_ (matching changedOrGone) $ \(n',v) -> mapM_ (notify p n' v) acts
+
 -- $format
 --
 -- A configuration file consists of a series of directives and
--- comments.  Configuration files must be encoded in UTF-8.  A comment
--- begins with a \"@#@\" character, and continues to the end of a
--- line.
+-- comments, encoded in UTF-8.  A comment begins with a \"@#@\"
+-- character, and continues to the end of a line.
 --
 -- Files and directives are processed from first to last, top to
 -- bottom.
@@ -247,7 +294,7 @@ loadOne path = do
 -- or more of a Unicode alphanumeric code point, hyphen \"@-@\", or
 -- underscore \"@_@\".
 --
--- Bindings are made or overwritten in the order in which they are
+-- Bindings are created or overwritten in the order in which they are
 -- encountered.  It is legitimate for a name to be bound multiple
 -- times, in which case the last value wins.
 --
@@ -317,15 +364,16 @@ loadOne path = do
 -- > {
 -- >   a = 1
 -- >
+-- >   # groups support nesting
 -- >   nested {
 -- >     b = "yay!"
 -- >   }
 -- > }
 --
 -- The name of a group is used as a prefix for the items in the
--- group. For instance, the name \"@a@\" above can be found using
--- 'lookup' under the name \"@my-group.a@\", and \"@b@\" will be named
--- \"@my-group.nested.b@\".
+-- group. For instance, the value of \"@a@\" above can be retrieved
+-- using 'lookup' by supplying the name \"@my-group.a@\", and \"@b@\"
+-- will be named \"@my-group.nested.b@\".
 
 -- $import
 --
@@ -352,3 +400,10 @@ loadOne path = do
 -- > }
 --
 -- This will result in a value named \"@hi.bar@\".
+
+-- $notify
+--
+-- To more efficiently support an application's need to dynamically
+-- reconfigure, a subsystem may ask to be notified when a
+-- configuration property is changed as a result of a reload, using
+-- the 'subscribe' action.
