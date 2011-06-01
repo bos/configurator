@@ -81,8 +81,9 @@ loadFiles = foldM go H.empty
 -- | Create a 'Config' from the contents of the named files. Throws an
 -- exception on error, such as if files do not exist or contain errors.
 --
--- File names are interpolated prior to opening, so you can specify a
--- file name such as @\"$(HOME)/myapp.cfg\"@.
+-- File names have any environment variables expanded prior to the
+-- first time they are opened, so you can specify a file name such as
+-- @\"$(HOME)/myapp.cfg\"@.
 load :: [FilePath] -> IO Config
 load paths0 = do
   let paths = map T.pack paths0
@@ -118,8 +119,9 @@ autoConfig = AutoConfig {
 -- exception is thrown.  If the initial load succeeds, but a
 -- subsequent attempt fails, the 'onError' handler is invoked.
 --
--- File names are interpolated prior to opening, so you can specify a
--- file name such as @\"$(HOME)/myapp.cfg\"@.
+-- File names have any environment variables expanded prior to the
+-- first time they are opened, so you can specify a file name such as
+-- @\"$(HOME)/myapp.cfg\"@.
 autoReload :: AutoConfig
            -- ^ Directions for when to reload and how to handle
            -- errors.
@@ -228,6 +230,9 @@ loadOne path = do
 -- comments.  Configuration files must be encoded in UTF-8.  A comment
 -- begins with a \"@#@\" character, and continues to the end of a
 -- line.
+--
+-- Files and directives are processed from first to last, top to
+-- bottom.
 
 -- $binding
 --
@@ -241,6 +246,14 @@ loadOne path = do
 -- A name must begin with a Unicode letter, which is followed by zero
 -- or more of a Unicode alphanumeric code point, hyphen \"@-@\", or
 -- underscore \"@_@\".
+--
+-- Bindings are made or overwritten in the order in which they are
+-- encountered.  It is legitimate for a name to be bound multiple
+-- times, in which case the last value wins.
+--
+-- > a = 1
+-- > a = true
+-- > # value of a is now true, not 1
 
 -- $types
 --
