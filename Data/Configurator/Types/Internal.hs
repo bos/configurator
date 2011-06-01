@@ -111,7 +111,10 @@ data Value = Bool Bool
            | Number Int
            -- ^ Integer.
            | List [Value]
-           -- ^ Heterogeneous list.
+           -- ^ Heterogeneous list.  Represented in a configuration
+           -- file as an opening square bracket \"@[@\", followed by a
+           -- comma-separated series of values, ending with a closing
+           -- square bracket \"@]@\".
              deriving (Eq, Show, Typeable, Data)
 
 -- | An interpolation directive.

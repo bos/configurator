@@ -8,10 +8,29 @@
 -- Stability:   experimental
 -- Portability: portable
 --
--- Types for working with configuration files.
+-- A simple (yet powerful) library for working with configuration
+-- files.
 
 module Data.Configurator
     (
+    -- * Configuration file format
+    -- $format
+
+    -- ** Binding a name to a value
+    -- $binding
+
+    -- *** Value types
+    -- $types
+
+    -- *** String interpolation
+    -- $interp
+
+    -- ** Grouping directives
+    -- $group
+
+    -- ** Importing files
+    -- $import
+
     -- * Loading configuration data
       autoReload
     , autoConfig
@@ -117,11 +136,21 @@ autoReload AutoConfig{..} paths = do
 getNewest :: [FilePath] -> IO ClockTime
 getNewest = flip foldM (TOD 0 0) $ \t -> fmap (max t) . getModificationTime
 
+-- | Look up a name in the given 'Config'.  If a binding exists, and
+-- the value can be 'convert'ed to the desired type, return the
+-- converted value, otherwise 'Nothing'.
 lookup :: Configured a => Config -> Name -> IO (Maybe a)
 lookup Config{..} name =
     (join . fmap convert . H.lookup name) <$> readIORef cfgMap
 
-lookupDefault :: Configured a => a -> Config -> Name -> IO a
+-- | Look up a name in the given 'Config'.  If a binding exists, and
+-- the value can be converted to the desired type, return it,
+-- otherwise return the default value.
+lookupDefault :: Configured a =>
+                 a
+              -- ^ Default value to return if 'lookup' or 'convert'
+              -- fails.
+              -> Config -> Name -> IO a
 lookupDefault def cfg name = fromMaybe def <$> lookup cfg name
 
 -- | Perform a simple dump of a 'Config' to @stdout@.
@@ -150,7 +179,7 @@ flatten roots files = foldM (directive "") H.empty .
 
 interpolate :: T.Text -> H.HashMap Name Value -> IO T.Text
 interpolate s env
-    | "$(" `T.isInfixOf` s =
+    | "$" `T.isInfixOf` s =
       case T.parseOnly interp s of
         Left err   -> throwIO $ ParseError "" err
         Right xs -> (L.toStrict . toLazyText . mconcat) <$> mapM interpret xs
@@ -185,3 +214,121 @@ loadOne path = do
   case p of
     Left err -> throwIO (ParseError path err)
     Right ds -> return ds
+
+-- $format
+--
+-- A configuration file consists of a series of directives and
+-- comments.  Configuration files must be encoded in UTF-8.  A comment
+-- begins with a \"@#@\" character, and continues to the end of a
+-- line.
+
+-- $binding
+--
+-- A binding associates a name with a value.
+--
+-- > my_string = "hi mom! \u2603"
+-- > your-int-33 = 33
+-- > his_bool = on
+-- > HerList = [1, "foo", off]
+--
+-- A name must begin with a Unicode letter, which is followed by zero
+-- or more of a Unicode alphanumeric code point, hyphen \"@-@\", or
+-- underscore \"@_@\".
+
+-- $types
+--
+-- The configuration file format supports the following data types:
+--
+-- * Booleans, represented as @on@ or @off@, @true@ or @false@.  These
+--   are case sensitive, so do not try to use @True@ instead of
+--   @true@!
+--
+-- * Integers, represented in base 10.
+--
+-- * Unicode strings, represented as text (possibly containing escape
+--   sequences) surrounded by double quotes.
+--
+-- * Heterogeneous lists of values, represented as an opening square
+--   bracket \"@[@\", followed by a series of comma-separated values,
+--   ending with a closing square bracket \"@]@\".
+--
+-- The following escape sequences are recognised in a text string:
+--
+-- * @\\n@ - newline
+--
+-- * @\\r@ - carriage return
+--
+-- * @\\t@ - horizontal tab
+--
+-- * @\\\\@ - backslash
+--
+-- * @\\\"@ - double quote
+--
+-- * @\\u@/xxxx/ - Unicode character from the basic multilingual
+--   plane, encoded as four hexadecimal digits
+--
+-- * @\\u@/xxxx/@\\u@/xxxx/ - Unicode character from an astral plane,
+--   as two hexadecimal-encoded UTF-16 surrogates
+
+-- $interp
+--
+-- Strings support interpolation, so that you can dynamically
+-- construct a string based on data in your configuration or the OS
+-- environment.
+--
+-- If a string value contains the special sequence \"@$(foo)@\" (for
+-- any name @foo@), then the name @foo@ will be looked up in the
+-- configuration data and its value substituted.  If that name cannot
+-- be found, it will be looked up in the OS environment.
+--
+-- For security reasons, it is an error for a string interpolation
+-- fragment to contain a name that cannot be found in either the
+-- current configuration or the environment.
+--
+-- To represent a single literal \"@$@\" character in a string, double
+-- it: \"@$$@\".
+
+-- $group
+--
+-- It is possible to group a number of directives together under a
+-- single prefix:
+--
+-- > my-group
+-- > {
+-- >   a = 1
+-- >
+-- >   nested {
+-- >     b = "yay!"
+-- >   }
+-- > }
+--
+-- The name of a group is used as a prefix for the items in the
+-- group. For instance, the name \"@a@\" above can be found using
+-- 'lookup' under the name \"@my-group.a@\", and \"@b@\" will be named
+-- \"@my-group.nested.b@\".
+
+-- $import
+--
+-- To import the contents of another configuration file, use the
+-- @import@ directive.
+--
+-- > import "$(HOME)/etc/myapp.cfg"
+--
+-- It is an error for an @import@ directive to name a file that does
+-- not exist, cannot be read, or contains errors.
+--
+-- If an @import@ appears inside a group, the group's naming prefix
+-- will be applied to all of the names imported from the given
+-- configuration file.
+--
+-- Supposing we have a file named \"@foo.cfg@\":
+--
+-- > bar = 1
+--
+-- And another file that imports it into a group:
+--
+-- > hi {
+-- >   import "foo.cfg"
+-- > }
+--
+-- This will result in a value named \"@hi.bar@\".
