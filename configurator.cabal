@@ -35,6 +35,7 @@ description:
 
 extra-source-files:
     README.markdown
+    tests/TestLoad.hs
 
 flag developer
   description: operate in developer mode
