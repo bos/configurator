@@ -80,13 +80,16 @@ loadFiles = foldM go H.empty
   
 -- | Create a 'Config' from the contents of the named files. Throws an
 -- exception on error, such as if files do not exist or contain errors.
+--
+-- File names are interpolated prior to opening, so you can specify a
+-- file name such as @\"$(HOME)/myapp.cfg\"@.
 load :: [FilePath] -> IO Config
 load paths0 = do
   let paths = map T.pack paths0
   ds <- loadFiles paths
   m <- newIORef =<< flatten paths ds
   return Config {
-               cfgPaths = paths
+               cfgPaths = H.keys ds
              , cfgMap = m
              }
 
@@ -114,6 +117,9 @@ autoConfig = AutoConfig {
 -- If the initial attempt to load the configuration files fails, an
 -- exception is thrown.  If the initial load succeeds, but a
 -- subsequent attempt fails, the 'onError' handler is invoked.
+--
+-- File names are interpolated prior to opening, so you can specify a
+-- file name such as @\"$(HOME)/myapp.cfg\"@.
 autoReload :: AutoConfig
            -- ^ Directions for when to reload and how to handle
            -- errors.
