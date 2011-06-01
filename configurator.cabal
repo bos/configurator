@@ -57,8 +57,8 @@ library
     bytestring,
     directory,
     hashable,
-    old-time,
     text >= 0.11.1.0,
+    unix-compat,
     unordered-containers	
 
   if flag(developer)

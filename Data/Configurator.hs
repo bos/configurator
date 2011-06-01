@@ -53,8 +53,8 @@ module Data.Configurator
 
 import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId, forkIO, threadDelay)
-import Control.Exception (SomeException, catch, evaluate, throwIO, try)
-import Control.Monad (foldM, forM_, join, when)
+import Control.Exception (SomeException, catch, evaluate, handle, throwIO, try)
+import Control.Monad (foldM, forM, forM_, join, when)
 import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
 import Data.Configurator.Types.Internal
@@ -64,10 +64,10 @@ import Data.Monoid (mconcat)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
 import Data.Text.Lazy.Builder.Int (decimal)
 import Prelude hiding (catch, lookup)
-import System.Directory (getModificationTime)
 import System.Environment (getEnv)
 import System.IO (hPutStrLn, stderr)
-import System.Time (ClockTime(..))
+import System.Posix.Types (EpochTime, FileOffset)
+import System.PosixCompat.Files (fileSize, getFileStatus, modificationTime)
 import qualified Data.Attoparsec.Text as T
 import qualified Data.Attoparsec.Text.Lazy as L
 import qualified Data.HashMap.Lazy as H
@@ -148,17 +148,25 @@ autoReload AutoConfig{..} _
 autoReload _ []    = error "autoReload: no paths to load"
 autoReload auto@AutoConfig{..} paths = do
   cfg <- load' (Just auto) paths
-  let loop newest = do
+  let loop meta = do
         threadDelay (max interval 1 * 1000000)
-        newest' <- getNewest paths
-        if newest' == newest
-          then loop newest
-          else (reload cfg `catch` onError) >> loop newest'
-  tid <- forkIO $ loop =<< getNewest paths
+        meta' <- getMeta paths
+        if meta' == meta
+          then loop meta
+          else (reload cfg `catch` onError) >> loop meta'
+  tid <- forkIO $ loop =<< getMeta paths
   return (cfg, tid)
   
-getNewest :: [FilePath] -> IO ClockTime
-getNewest = flip foldM (TOD 0 0) $ \t -> fmap (max t) . getModificationTime
+-- | Save both a file's size and its last modification date, so we
+-- have a better chance of detecting a modification on a crappy
+-- filesystem with timestamp resolution of 1 second or worse.
+type Meta = (FileOffset, EpochTime)
+
+getMeta :: [FilePath] -> IO [Maybe Meta]
+getMeta paths = forM paths $ \path ->
+   handle (\(_::SomeException) -> return Nothing) . fmap Just $ do
+     st <- getFileStatus path
+     return (fileSize st, modificationTime st)
 
 -- | Look up a name in the given 'Config'.  If a binding exists, and
 -- the value can be 'convert'ed to the desired type, return the
