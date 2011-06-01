@@ -7,14 +7,17 @@ Its features include:
 * Automatic, dynamic reloading in response to modifications to
   configuration files.
 
-* The simple, but flexible, configuration language supports several of
-  the most commonly needed types of data, along with interpolation of
-  strings from the configuration or the system environment
+* A simple, but flexible, configuration language, supporting several
+  of the most commonly needed types of data, along with interpolation
+  of strings from the configuration or the system environment
   (e.g. `$(HOME)`).
 
-* Use the `import` directive to break up the configuration of a
-  complex application into smaller files, or to easily share pieces of
-  common configuration data across several applications.
+* Subscription-based notification of changes to configuration
+  properties.
+
+* An `import` directive allows the configuration of a complex
+  application to be split across several smaller files, or
+  configuration data to be shared across several applications.
 
 # Configuration file format
 
