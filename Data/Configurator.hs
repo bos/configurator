@@ -123,7 +123,8 @@ autoConfig = AutoConfig {
              , onError = const $ return ()
              }
 
--- | Load a 'Config' from the given 'FilePath's.
+-- | Load a 'Config' from the given 'FilePath's, and start a reload
+-- thread.
 --
 -- At intervals, a thread checks for modifications to both the
 -- original files and any files they refer to in @import@ directives,

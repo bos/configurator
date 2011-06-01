@@ -50,6 +50,9 @@ data Config = Config {
     }
 
 -- | An action to be invoked if a configuration property is changed.
+--
+-- If this action is invoked and throws an exception, the 'onError'
+-- function will be called.
 type ChangeHandler = Name
                    -- ^ Name of the changed property.
                    -> Maybe Value
@@ -114,9 +117,13 @@ data AutoConfig = AutoConfig {
     -- ^ Interval (in seconds) at which to check for updates to config
     -- files.  The smallest allowed interval is one second.
     , onError :: SomeException -> IO ()
-    -- ^ Action invoked when an attempt to reload a 'Config' fails.
+    -- ^ Action invoked when an attempt to reload a 'Config' or notify
+    -- a 'ChangeHandler' causes an exception to be thrown.
+    --
     -- If this action rethrows its exception or throws a new
     -- exception, the modification checking thread will be killed.
+    -- You may want your application to treat that as a fatal error,
+    -- as its configuration may no longer be consistent.
     } deriving (Typeable)
 
 instance Show AutoConfig where
