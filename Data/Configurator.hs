@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns, OverloadedStrings, RecordWildCards,
+    ScopedTypeVariables #-}
 
 -- |
 -- Module:      Data.Configurator
@@ -73,7 +74,7 @@ loadFiles = foldM go H.empty
  where
    go seen path = do
      ds <- loadOne . T.unpack =<< interpolate path H.empty
-     let seen' = H.insert path ds seen
+     let !seen'    = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
      foldM go seen' . filter notSeen . importsOf $ ds
   
