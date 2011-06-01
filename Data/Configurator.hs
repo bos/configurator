@@ -260,9 +260,9 @@ notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
       where check n v nvs = case H.lookup n m of
                               Nothing -> (n,v):nvs
                               _       -> nvs
-  notify p n v a = a n v `catch` \(e::SomeException) ->
-                   maybe report onError cfgAuto e
-    where report e = hPutStrLn stderr $ "ChangeHandler threw exception for " ++
+  notify p n v a = a n v `catch` maybe report onError cfgAuto
+    where report e = hPutStrLn stderr $
+                     "*** a ChangeHandler threw an exception for " ++
                      show (p,n) ++ ": " ++ show e
   go p@(Exact n) acts next = (const next =<<) $ do
     let v' = H.lookup n m'
