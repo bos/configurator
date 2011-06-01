@@ -25,7 +25,6 @@ main = do
                    }
     (c,_) <- autoReload myConfig temps
     display c
-    subscribe c "dongly" $ \n v -> putMVar done ()
-    --threadDelay 1000000
+    subscribe c "dongly" $ \n v -> print (n,v) >> putMVar done ()
     forM_ temps $ \t -> L.appendFile t "\ndongly = 1\n"
     takeMVar done
