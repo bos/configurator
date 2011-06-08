@@ -196,7 +196,7 @@ data Value = Bool Bool
            --
            -- * @\\u@/xxxx/@\\u@/xxxx/ - Unicode character (as two
            --   UTF-16 surrogates)
-           | Number Int
+           | Number Integer
            -- ^ Integer.
            | List [Value]
            -- ^ Heterogeneous list.  Represented in a configuration

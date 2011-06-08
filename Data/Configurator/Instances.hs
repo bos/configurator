@@ -5,7 +5,9 @@ module Data.Configurator.Instances () where
 
 import Control.Applicative
 import Data.Configurator.Types.Internal
+import Data.Int (Int8, Int16, Int32, Int64)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Word (Word, Word8, Word16, Word32, Word64)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.Text as T
@@ -18,9 +20,42 @@ instance Configured Bool where
     convert (Bool v) = Just v
     convert _        = Nothing
 
+convertNumber :: (Num a) => Value -> Maybe a
+convertNumber (Number v) = Just (fromIntegral v)
+convertNumber _          = Nothing
+
 instance Configured Int where
-    convert (Number v) = Just v
-    convert _          = Nothing
+    convert = convertNumber
+
+instance Configured Integer where
+    convert = convertNumber
+
+instance Configured Int8 where
+    convert = convertNumber
+
+instance Configured Int16 where
+    convert = convertNumber
+
+instance Configured Int32 where
+    convert = convertNumber
+
+instance Configured Int64 where
+    convert = convertNumber
+
+instance Configured Word where
+    convert = convertNumber
+
+instance Configured Word8 where
+    convert = convertNumber
+
+instance Configured Word16 where
+    convert = convertNumber
+
+instance Configured Word32 where
+    convert = convertNumber
+
+instance Configured Word64 where
+    convert = convertNumber
 
 instance Configured T.Text where
     convert (String v) = Just v
