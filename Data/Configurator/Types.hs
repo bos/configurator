@@ -15,6 +15,10 @@ module Data.Configurator.Types
     , Name
     , Value(..)
     , Configured(..)
+    , Worth(..)
+    -- * Exceptions
+    , ConfigError(..)
+    , KeyError(..)
     -- * Notification of configuration changes
     , Pattern
     , ChangeHandler

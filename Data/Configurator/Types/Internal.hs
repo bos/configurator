@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable, FlexibleInstances #-}
 
 -- |
 -- Module:      Data.Configurator.Types.Internal
@@ -15,12 +15,14 @@ module Data.Configurator.Types.Internal
       Config(..)
     , Configured(..)
     , AutoConfig(..)
+    , Worth(..)
     , Name
     , Value(..)
     , Binding
     , Path
     , Directive(..)
     , ConfigError(..)
+    , KeyError(..)
     , Interpolate(..)
     , Pattern(..)
     , exact
@@ -40,14 +42,31 @@ import Data.Typeable (Typeable)
 import Prelude hiding (lookup)
 import qualified Data.HashMap.Lazy as H
 
+data Worth a = Required { worth :: a }
+             | Optional { worth :: a }
+               deriving (Show, Typeable)
+                    
+instance IsString (Worth FilePath) where
+    fromString = Required
+
+instance (Eq a) => Eq (Worth a) where
+    a == b = worth a == worth b
+
+instance (Hashable a) => Hashable (Worth a) where
+    hash = hash . worth
+
 -- | Configuration data.
 data Config = Config {
       cfgAuto :: Maybe AutoConfig
-    , cfgPaths :: [Path]
+    , cfgPaths :: [Worth Path]
     -- ^ The files from which the 'Config' was loaded.
     , cfgMap :: IORef (H.HashMap Name Value)
     , cfgSubs :: IORef (H.HashMap Pattern [ChangeHandler])
     }
+
+instance Functor Worth where
+    fmap f (Required a) = Required (f a)
+    fmap f (Optional a) = Optional (f a)
 
 -- | An action to be invoked if a configuration property is changed.
 --
@@ -111,6 +130,14 @@ class Configured a where
 data ConfigError = ParseError FilePath String
                    deriving (Show, Typeable)
 
+instance Exception ConfigError
+
+-- | An error occurred while lookup up the given 'Name'.
+data KeyError = KeyError Name
+              deriving (Show, Typeable)
+
+instance Exception KeyError
+
 -- | Directions for automatically reloading 'Config' data.
 data AutoConfig = AutoConfig {
       interval :: Int
@@ -128,8 +155,6 @@ data AutoConfig = AutoConfig {
 
 instance Show AutoConfig where
     show c = "AutoConfig {interval = " ++ show (interval c) ++ "}"
-
-instance Exception ConfigError
 
 -- | The name of a 'Config' value.
 type Name = Text

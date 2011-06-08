@@ -32,12 +32,15 @@ module Data.Configurator
     -- ** Importing files
     -- $import
 
+    -- * Types
+      Worth(..)
     -- * Loading configuration data
-      autoReload
+    , autoReload
     , autoConfig
     -- * Lookup functions
     , lookup
     , lookupDefault
+    , require
     -- * Notification of configuration changes
     -- $notify
     , prefix
@@ -75,11 +78,14 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 
-loadFiles :: [Path] -> IO (H.HashMap Path [Directive])
+loadFiles :: [Worth Path] -> IO (H.HashMap (Worth Path) [Directive])
 loadFiles = foldM go H.empty
  where
    go seen path = do
-     ds <- loadOne . T.unpack =<< interpolate path H.empty
+     let rewrap n = const n <$> path
+         wpath = worth path
+     path' <- rewrap <$> interpolate wpath H.empty
+     ds <- loadOne (T.unpack <$> path')
      let !seen'    = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
      foldM go seen' . filter notSeen . importsOf $ ds
@@ -90,12 +96,12 @@ loadFiles = foldM go H.empty
 -- File names have any environment variables expanded prior to the
 -- first time they are opened, so you can specify a file name such as
 -- @\"$(HOME)/myapp.cfg\"@.
-load :: [FilePath] -> IO Config
+load :: [Worth FilePath] -> IO Config
 load = load' Nothing
 
-load' :: Maybe AutoConfig -> [FilePath] -> IO Config
+load' :: Maybe AutoConfig -> [Worth FilePath] -> IO Config
 load' auto paths0 = do
-  let paths = map T.pack paths0
+  let paths = map (fmap T.pack) paths0
   ds <- loadFiles paths
   m <- newIORef =<< flatten paths ds
   s <- newIORef H.empty
@@ -140,7 +146,7 @@ autoConfig = AutoConfig {
 autoReload :: AutoConfig
            -- ^ Directions for when to reload and how to handle
            -- errors.
-           -> [FilePath]
+           -> [Worth FilePath]
            -- ^ Configuration files to load.
            -> IO (Config, ThreadId)
 autoReload AutoConfig{..} _
@@ -162,10 +168,10 @@ autoReload auto@AutoConfig{..} paths = do
 -- filesystem with timestamp resolution of 1 second or worse.
 type Meta = (FileOffset, EpochTime)
 
-getMeta :: [FilePath] -> IO [Maybe Meta]
+getMeta :: [Worth FilePath] -> IO [Maybe Meta]
 getMeta paths = forM paths $ \path ->
    handle (\(_::SomeException) -> return Nothing) . fmap Just $ do
-     st <- getFileStatus path
+     st <- getFileStatus (worth path)
      return (fileSize st, modificationTime st)
 
 -- | Look up a name in the given 'Config'.  If a binding exists, and
@@ -174,6 +180,16 @@ getMeta paths = forM paths $ \path ->
 lookup :: Configured a => Config -> Name -> IO (Maybe a)
 lookup Config{..} name =
     (join . fmap convert . H.lookup name) <$> readIORef cfgMap
+
+-- | Look up a name in the given 'Config'.  If a binding exists, and
+-- the value can be 'convert'ed to the desired type, return the
+-- converted value, otherwise throw a 'KeyError'.
+require :: Configured a => Config -> Name -> IO a
+require Config{..} name = do
+  val <- (join . fmap convert . H.lookup name) <$> readIORef cfgMap
+  case val of
+    Just v -> return v
+    _      -> throwIO . KeyError $ name
 
 -- | Look up a name in the given 'Config'.  If a binding exists, and
 -- the value can be converted to the desired type, return it,
@@ -193,7 +209,7 @@ display Config{..} = print =<< readIORef cfgMap
 getMap :: Config -> IO (H.HashMap Name Value)
 getMap = readIORef . cfgMap
 
-flatten :: [Path] -> H.HashMap Path [Directive] -> IO (H.HashMap Name Value)
+flatten :: [Worth Path] -> H.HashMap (Worth Path) [Directive] -> IO (H.HashMap Name Value)
 flatten roots files = foldM (directive "") H.empty .
                       concat . catMaybes . map (`H.lookup` files) $ roots
  where
@@ -205,7 +221,7 @@ flatten roots files = foldM (directive "") H.empty .
   directive pfx m (Group name xs) = foldM (directive pfx') m xs
       where pfx' = T.concat [pfx, name, "."]
   directive pfx m (Import path) =
-      case H.lookup path files of
+      case H.lookup (Required path) files of
         Just ds -> foldM (directive pfx) m ds
         _       -> return m
 
@@ -230,22 +246,27 @@ interpolate s env
                 throwIO . ParseError "" $ "no such variable " ++ show name
             Right x -> return (fromString x)
 
-importsOf :: [Directive] -> [Path]
-importsOf (Import path : xs) = path : importsOf xs
+importsOf :: [Directive] -> [Worth Path]
+importsOf (Import path : xs) = Required path : importsOf xs
 importsOf (Group _ ys : xs)  = importsOf ys ++ importsOf xs
 importsOf (_ : xs)           = importsOf xs
 importsOf _                  = []
 
-loadOne :: FilePath -> IO [Directive]
+loadOne :: Worth FilePath -> IO [Directive]
 loadOne path = do
-  s <- L.readFile path
-  p <- evaluate (L.eitherResult $ L.parse topLevel s)
-       `catch` \(e::ConfigError) ->
-       throwIO $ case e of
-                   ParseError _ err -> ParseError path err
-  case p of
-    Left err -> throwIO (ParseError path err)
-    Right ds -> return ds
+  es <- try . L.readFile . worth $ path
+  case es of
+    Left (err::SomeException) -> case path of
+                                   Required _ -> throwIO err
+                                   _          -> return []
+    Right s -> do
+            p <- evaluate (L.eitherResult $ L.parse topLevel s)
+                 `catch` \(e::ConfigError) ->
+                 throwIO $ case e of
+                             ParseError _ err -> ParseError (worth path) err
+            case p of
+              Left err -> throwIO (ParseError (worth path) err)
+              Right ds -> return ds
 
 -- | Subscribe for notifications.  The given action will be invoked
 -- when any change occurs to a configuration property matching the

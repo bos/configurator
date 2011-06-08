@@ -38,10 +38,6 @@ instance Configured B.ByteString where
 instance Configured LB.ByteString where
     convert = fmap (LB.fromChunks . (:[])) . convert
 
-instance (Configured a) => Configured [a] where
-    convert (List xs) = mapM convert xs
-    convert _         = Nothing
-
 instance (Configured a, Configured b) => Configured (a,b) where
     convert (List [a,b]) = (,) <$> convert a <*> convert b
     convert _            = Nothing
