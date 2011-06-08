@@ -37,6 +37,7 @@ module Data.Configurator
     -- * Loading configuration data
     , autoReload
     , autoConfig
+    , empty
     -- * Lookup functions
     , lookup
     , lookupDefault
@@ -69,6 +70,7 @@ import Data.Text.Lazy.Builder.Int (decimal)
 import Prelude hiding (catch, lookup)
 import System.Environment (getEnv)
 import System.IO (hPutStrLn, stderr)
+import System.IO.Unsafe (unsafePerformIO)
 import System.Posix.Types (EpochTime, FileOffset)
 import System.PosixCompat.Files (fileSize, getFileStatus, modificationTime)
 import qualified Data.Attoparsec.Text as T
@@ -301,6 +303,19 @@ notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
     let matching = filter (T.isPrefixOf n . fst)
     forM_ (matching new) $ \(n',v) -> mapM_ (notify p n' (Just v)) acts
     forM_ (matching changedOrGone) $ \(n',v) -> mapM_ (notify p n' v) acts
+
+-- | A completely empty configuration.
+empty :: Config
+empty = unsafePerformIO $ do
+          m <- newIORef H.empty
+          s <- newIORef H.empty
+          return Config {
+                       cfgAuto = Nothing
+                     , cfgPaths = []
+                     , cfgMap = m
+                     , cfgSubs = s
+                     }
+{-# NOINLINE empty #-}
 
 -- $format
 --
