@@ -1,5 +1,5 @@
 name:            configurator
-version:         0.0.1.0
+version:         0.0.1.1
 license:         BSD3
 license-file:    LICENSE
 category:        Configuration, Data
@@ -55,7 +55,7 @@ library
     Data.Configurator.Types.Internal
 
   build-depends:
-    attoparsec-text >= 0.8.5.0,
+    attoparsec-text >= 0.8.5.1,
     base == 4.*,
     bytestring,
     directory,
