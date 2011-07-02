@@ -52,6 +52,8 @@ module Data.Configurator
     , load
     , loadGroups
     , reload
+    , addToConfig
+    , addGroupsToConfig
     -- * Helper functions
     , display
     , getMap
@@ -114,11 +116,12 @@ load' auto paths0 = do
   let second f (x,y) = (x, f y)
       paths          = map (second (fmap T.pack)) paths0
   ds <- loadFiles (map snd paths)
+  p <- newIORef paths
   m <- newIORef =<< flatten paths ds
   s <- newIORef H.empty
   return Config {
                 cfgAuto = auto
-              , cfgPaths = paths
+              , cfgPaths = p
               , cfgMap = m
               , cfgSubs = s
               }
@@ -127,9 +130,25 @@ load' auto paths0 = do
 -- if files no longer exist or contain errors.
 reload :: Config -> IO ()
 reload cfg@Config{..} = do
-  m' <- flatten cfgPaths =<< loadFiles (map snd cfgPaths)
+  paths <- readIORef cfgPaths
+  m' <- flatten paths =<< loadFiles (map snd paths)
   m <- atomicModifyIORef cfgMap $ \m -> (m', m)
   notifySubscribers cfg m m' =<< readIORef cfgSubs
+
+-- | Add additional files to a 'Config', causing it to be reloaded to add
+-- their contents.
+addToConfig :: [Worth FilePath] -> Config -> IO ()
+addToConfig paths0 cfg = addGroupsToConfig (map (\x -> ("",x)) paths0) cfg
+
+-- | Add additional files to named groups in a 'Config', causing it to be
+-- reloaded to add their contents.  If the prefixes are non-empty, they should
+-- end in dots.
+addGroupsToConfig :: [(Name, Worth FilePath)] -> Config -> IO ()
+addGroupsToConfig paths0 cfg@Config{..} = do
+  let second f (x,y) = (x, f y)
+      paths          = map (second (fmap T.pack)) paths0
+  atomicModifyIORef cfgPaths $ \prev -> (prev ++ paths, ())
+  reload cfg
 
 -- | Defaults for automatic 'Config' reloading when using
 -- 'autoReload'.  The 'interval' is one second, while the 'onError'
@@ -235,10 +254,10 @@ flatten roots files = foldM doPath H.empty roots
         Nothing -> return m
         Just ds -> foldM (directive pfx (worth f)) m ds
 
-  directive pfx f m (Bind name (String value)) = do
+  directive pfx _ m (Bind name (String value)) = do
       v <- interpolate value m
       return $! H.insert (T.append pfx name) (String v) m
-  directive pfx f m (Bind name value) =
+  directive pfx _ m (Bind name value) =
       return $! H.insert (T.append pfx name) value m
   directive pfx f m (Group name xs) = foldM (directive pfx' f) m xs
       where pfx' = T.concat [pfx, name, "."]
@@ -334,11 +353,12 @@ notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
 -- | A completely empty configuration.
 empty :: Config
 empty = unsafePerformIO $ do
+          p <- newIORef []
           m <- newIORef H.empty
           s <- newIORef H.empty
           return Config {
                        cfgAuto = Nothing
-                     , cfgPaths = []
+                     , cfgPaths = p
                      , cfgMap = m
                      , cfgSubs = s
                      }
