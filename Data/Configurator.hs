@@ -52,6 +52,7 @@ module Data.Configurator
     , load
     , loadGroups
     , reload
+    , subconfig
     , addToConfig
     , addGroupsToConfig
     -- * Helper functions
@@ -126,8 +127,16 @@ load' auto paths0 = do
               , cfgSubs = s
               }
 
+-- | Gives a 'Config' corresponding to just a single group of the original
+-- 'Config'.  The subconfig can be used just like the original 'Config', but
+-- see the documentation for 'reload'.
+subconfig :: Name -> Config -> Config
+subconfig g (Config root cfg) = Config (T.concat [root, g, "."]) cfg
+
 -- | Forcibly reload a 'Config'. Throws an exception on error, such as
--- if files no longer exist or contain errors.
+-- if files no longer exist or contain errors.  If the provided 'Config' is
+-- a 'subconfig', this will reload the entire top-level configuration, not just
+-- the local section.
 reload :: Config -> IO ()
 reload (Config _ cfg@BaseConfig{..}) = reloadBase cfg
 
