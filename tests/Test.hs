@@ -8,13 +8,16 @@ import Prelude hiding (lookup)
 import           Control.Concurrent
 import           Control.Exception
 import           Control.Monad
+import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.Configurator
 import           Data.Configurator.Types
 import           Data.Functor
+import           Data.Int
 import           Data.Maybe
 import           Data.Text (Text)
-import qualified Data.ByteString.Lazy.Char8 as L
+import           Data.Word
 import           System.Directory
+import           System.Environment
 import           System.IO
 import           Test.HUnit
 
@@ -23,7 +26,10 @@ main = runTestTT tests >> return ()
 
 tests :: Test
 tests = TestList [
-    "load" ~: loadTest,
+    "load"   ~: loadTest,
+    "types"  ~: typesTest,
+    "interp" ~: interpTest,
+    "import" ~: importTest,
     "reload" ~: reloadTest
     ]
 
@@ -90,6 +96,60 @@ loadTest = withLoad [Required "resources/pathological.cfg"] $ \cfg -> do
 
     deep <- lookup cfg "ag.q-e.i_u9.a"
     assertEqual "deep bool" deep (Just False :: Maybe Bool)
+
+typesTest :: Assertion
+typesTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
+    asInt <- lookup cfg "aa" :: IO (Maybe Int)
+    assertEqual "int" asInt (Just 1)
+
+    asInteger <- lookup cfg "aa" :: IO (Maybe Integer)
+    assertEqual "int" asInteger (Just 1)
+
+    asWord <- lookup cfg "aa" :: IO (Maybe Word)
+    assertEqual "int" asWord (Just 1)
+
+    asInt8 <- lookup cfg "aa" :: IO (Maybe Int8)
+    assertEqual "int8" asInt8 (Just 1)
+
+    asInt16 <- lookup cfg "aa" :: IO (Maybe Int16)
+    assertEqual "int16" asInt16 (Just 1)
+
+    asInt32 <- lookup cfg "aa" :: IO (Maybe Int32)
+    assertEqual "int32" asInt32 (Just 1)
+
+    asInt64 <- lookup cfg "aa" :: IO (Maybe Int64)
+    assertEqual "int64" asInt64 (Just 1)
+
+    asWord8 <- lookup cfg "aa" :: IO (Maybe Word8)
+    assertEqual "word8" asWord8 (Just 1)
+
+    asWord16 <- lookup cfg "aa" :: IO (Maybe Word16)
+    assertEqual "word16" asWord16 (Just 1)
+
+    asWord32 <- lookup cfg "aa" :: IO (Maybe Word32)
+    assertEqual "word32" asWord32 (Just 1)
+
+    asWord64 <- lookup cfg "aa" :: IO (Maybe Word64)
+    assertEqual "word64" asWord64 (Just 1)
+
+    asTextBad <- lookup cfg "aa" :: IO (Maybe Text)
+    assertEqual "word64" asTextBad Nothing
+
+    asTextGood <- lookup cfg "ab" :: IO (Maybe Text)
+    assertEqual "word64" asTextGood (Just "foo")
+
+interpTest :: Assertion
+interpTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
+    home    <- getEnv "HOME"
+    cfgHome <- lookup cfg "ba"
+    assertEqual "home interp" (Just home) cfgHome
+
+importTest :: Assertion
+importTest = withLoad [Required "resources/import.cfg"] $ \ cfg -> do
+    aa  <- lookup cfg "x.aa" :: IO (Maybe Int)
+    assertEqual "simple" aa (Just 1)
+    acx <- lookup cfg "x.ac.x" :: IO (Maybe Int)
+    assertEqual "nested" acx (Just 1)
 
 reloadTest :: Assertion
 reloadTest = withReload [Required "resources/pathological.cfg"] $ \[Just f] cfg -> do
