@@ -11,7 +11,7 @@
 module Data.Configurator.Types
     (
       AutoConfig(..)
-    , Config(cfgPaths)
+    , Config
     , Name
     , Value(..)
     , Configured(..)

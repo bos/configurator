@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns, OverloadedStrings, RecordWildCards,
-    ScopedTypeVariables #-}
+    ScopedTypeVariables, TupleSections #-}
 
 -- |
 -- Module:      Data.Configurator
@@ -103,15 +103,15 @@ loadFiles = foldM go H.empty
 -- first time they are opened, so you can specify a file name such as
 -- @\"$(HOME)/myapp.cfg\"@.
 load :: [Worth FilePath] -> IO Config
-load files = load' Nothing (map (\f -> ("", f)) files)
+load files = fmap (Config "") $ load' Nothing (map (\f -> ("", f)) files)
 
 -- | Create a 'Config' from the contents of the named files, placing them
 -- into named prefixes.  If a prefix is non-empty, it should end in a
 -- dot.
 loadGroups :: [(Name, Worth FilePath)] -> IO Config
-loadGroups = load' Nothing
+loadGroups files = fmap (Config "") $ load' Nothing files
 
-load' :: Maybe AutoConfig -> [(Name, Worth FilePath)] -> IO Config
+load' :: Maybe AutoConfig -> [(Name, Worth FilePath)] -> IO BaseConfig
 load' auto paths0 = do
   let second f (x,y) = (x, f y)
       paths          = map (second (fmap T.pack)) paths0
@@ -119,7 +119,7 @@ load' auto paths0 = do
   p <- newIORef paths
   m <- newIORef =<< flatten paths ds
   s <- newIORef H.empty
-  return Config {
+  return BaseConfig {
                 cfgAuto = auto
               , cfgPaths = p
               , cfgMap = m
@@ -129,7 +129,10 @@ load' auto paths0 = do
 -- | Forcibly reload a 'Config'. Throws an exception on error, such as
 -- if files no longer exist or contain errors.
 reload :: Config -> IO ()
-reload cfg@Config{..} = do
+reload (Config _ cfg@BaseConfig{..}) = reloadBase cfg
+
+reloadBase :: BaseConfig -> IO ()
+reloadBase cfg@BaseConfig{..} = do
   paths <- readIORef cfgPaths
   m' <- flatten paths =<< loadFiles (map snd paths)
   m <- atomicModifyIORef cfgMap $ \m -> (m', m)
@@ -144,11 +147,11 @@ addToConfig paths0 cfg = addGroupsToConfig (map (\x -> ("",x)) paths0) cfg
 -- reloaded to add their contents.  If the prefixes are non-empty, they should
 -- end in dots.
 addGroupsToConfig :: [(Name, Worth FilePath)] -> Config -> IO ()
-addGroupsToConfig paths0 cfg@Config{..} = do
-  let second f (x,y) = (x, f y)
-      paths          = map (second (fmap T.pack)) paths0
+addGroupsToConfig paths0 (Config root cfg@BaseConfig{..}) = do
+  let fix (x,y) = (root `T.append` x, fmap T.pack y)
+      paths     = map fix paths0
   atomicModifyIORef cfgPaths $ \prev -> (prev ++ paths, ())
-  reload cfg
+  reloadBase cfg
 
 -- | Defaults for automatic 'Config' reloading when using
 -- 'autoReload'.  The 'interval' is one second, while the 'onError'
@@ -195,9 +198,9 @@ autoReloadGroups auto@AutoConfig{..} paths = do
         meta' <- getMeta files
         if meta' == meta
           then loop meta
-          else (reload cfg `catch` onError) >> loop meta'
+          else (reloadBase cfg `catch` onError) >> loop meta'
   tid <- forkIO $ loop =<< getMeta files
-  return (cfg, tid)
+  return (Config "" cfg, tid)
   
 -- | Save both a file's size and its last modification date, so we
 -- have a better chance of detecting a modification on a crappy
@@ -214,15 +217,15 @@ getMeta paths = forM paths $ \path ->
 -- the value can be 'convert'ed to the desired type, return the
 -- converted value, otherwise 'Nothing'.
 lookup :: Configured a => Config -> Name -> IO (Maybe a)
-lookup Config{..} name =
-    (join . fmap convert . H.lookup name) <$> readIORef cfgMap
+lookup (Config root BaseConfig{..}) name =
+    (join . fmap convert . H.lookup (root `T.append` name)) <$> readIORef cfgMap
 
 -- | Look up a name in the given 'Config'.  If a binding exists, and
 -- the value can be 'convert'ed to the desired type, return the
 -- converted value, otherwise throw a 'KeyError'.
 require :: Configured a => Config -> Name -> IO a
-require Config{..} name = do
-  val <- (join . fmap convert . H.lookup name) <$> readIORef cfgMap
+require cfg name = do
+  val <- lookup cfg name
   case val of
     Just v -> return v
     _      -> throwIO . KeyError $ name
@@ -239,11 +242,11 @@ lookupDefault def cfg name = fromMaybe def <$> lookup cfg name
 
 -- | Perform a simple dump of a 'Config' to @stdout@.
 display :: Config -> IO ()
-display Config{..} = print =<< readIORef cfgMap
+display (Config root BaseConfig{..}) = print . (root,) =<< readIORef cfgMap
 
 -- | Fetch the 'H.HashMap' that maps names to values.
 getMap :: Config -> IO (H.HashMap Name Value)
-getMap = readIORef . cfgMap
+getMap = readIORef . cfgMap . baseCfg
 
 flatten :: [(Name, Worth Path)]
         -> H.HashMap (Worth Path) [Directive]
@@ -320,14 +323,18 @@ loadOne path = do
 -- when any change occurs to a configuration property matching the
 -- supplied pattern.
 subscribe :: Config -> Pattern -> ChangeHandler -> IO ()
-subscribe Config{..} pat act = do
+subscribe (Config root BaseConfig{..}) pat act = do
   m' <- atomicModifyIORef cfgSubs $ \m ->
-        let m' = H.insertWith (++) pat [act] m in (m', m')
+        let m' = H.insertWith (++) (localPattern root pat) [act] m in (m', m')
   evaluate m' >> return ()
 
-notifySubscribers :: Config -> H.HashMap Name Value -> H.HashMap Name Value
+localPattern :: Name -> Pattern -> Pattern
+localPattern pfx (Exact  s) = Exact  (pfx `T.append` s)
+localPattern pfx (Prefix s) = Prefix (pfx `T.append` s)
+
+notifySubscribers :: BaseConfig -> H.HashMap Name Value -> H.HashMap Name Value
                   -> H.HashMap Pattern [ChangeHandler] -> IO ()
-notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
+notifySubscribers BaseConfig{..} m m' subs = H.foldrWithKey go (return ()) subs
  where
   changedOrGone = H.foldrWithKey check [] m
       where check n v nvs = case H.lookup n m' of
@@ -352,11 +359,11 @@ notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
 
 -- | A completely empty configuration.
 empty :: Config
-empty = unsafePerformIO $ do
+empty = Config "" $ unsafePerformIO $ do
           p <- newIORef []
           m <- newIORef H.empty
           s <- newIORef H.empty
-          return Config {
+          return BaseConfig {
                        cfgAuto = Nothing
                      , cfgPaths = p
                      , cfgMap = m
