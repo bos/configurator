@@ -92,7 +92,7 @@ loadFiles = foldM go H.empty
      ds    <- loadOne (T.unpack <$> path')
      let !seen'    = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
-     foldM go seen' . filter notSeen . importsOf $ ds
+     foldM go seen' . filter notSeen . importsOf wpath $ ds
 
 -- | Create a 'Config' from the contents of the named files. Throws an
 -- exception on error, such as if files do not exist or contain errors.
@@ -233,19 +233,20 @@ flatten roots files = foldM doPath H.empty roots
  where
   doPath m (pfx, f) = case H.lookup f files of
         Nothing -> return m
-        Just ds -> foldM (directive pfx) m ds
+        Just ds -> foldM (directive pfx (worth f)) m ds
 
-  directive pfx m (Bind name (String value)) = do
+  directive pfx f m (Bind name (String value)) = do
       v <- interpolate value m
       return $! H.insert (T.append pfx name) (String v) m
-  directive pfx m (Bind name value) =
+  directive pfx f m (Bind name value) =
       return $! H.insert (T.append pfx name) value m
-  directive pfx m (Group name xs) = foldM (directive pfx') m xs
+  directive pfx f m (Group name xs) = foldM (directive pfx' f) m xs
       where pfx' = T.concat [pfx, name, "."]
-  directive pfx m (Import path) =
-      case H.lookup (Required path) files of
-        Just ds -> foldM (directive pfx) m ds
-        _       -> return m
+  directive pfx f m (Import path) =
+      let f' = relativize f path
+      in  case H.lookup (Required (relativize f path)) files of
+            Just ds -> foldM (directive pfx f') m ds
+            _       -> return m
 
 interpolate :: T.Text -> H.HashMap Name Value -> IO T.Text
 interpolate s env
@@ -268,11 +269,17 @@ interpolate s env
                 throwIO . ParseError "" $ "no such variable " ++ show name
             Right x -> return (fromString x)
 
-importsOf :: [Directive] -> [Worth Path]
-importsOf (Import path : xs) = Required path : importsOf xs
-importsOf (Group _ ys : xs)  = importsOf ys ++ importsOf xs
-importsOf (_ : xs)           = importsOf xs
-importsOf _                  = []
+importsOf :: Path -> [Directive] -> [Worth Path]
+importsOf path (Import ref : xs) = Required (relativize path ref)
+                                 : importsOf path xs
+importsOf path (Group _ ys : xs) = importsOf path ys ++ importsOf path xs
+importsOf path (_ : xs)          = importsOf path xs
+importsOf _    _                 = []
+
+relativize :: Path -> Path -> Path
+relativize parent child
+  | T.head child == '/' = child
+  | otherwise           = fst (T.breakOnEnd "/" parent) `T.append` child
 
 loadOne :: Worth FilePath -> IO [Directive]
 loadOne path = do
