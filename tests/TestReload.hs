@@ -23,7 +23,7 @@ main = do
     let myConfig = autoConfig {
                      onError = \e -> hPutStrLn stderr $ "uh oh: " ++ show e
                    }
-    (c,_) <- autoReload myConfig temps
+    (c,_) <- autoReload myConfig (map Required temps)
     display c
     subscribe c "dongly" $ \n v -> print (n,v) >> putMVar done ()
     forM_ temps $ \t -> L.appendFile t "\ndongly = 1\n"
