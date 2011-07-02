@@ -58,7 +58,7 @@ instance (Hashable a) => Hashable (Worth a) where
 -- | Configuration data.
 data Config = Config {
       cfgAuto :: Maybe AutoConfig
-    , cfgPaths :: [Worth Path]
+    , cfgPaths :: [(Name, Worth Path)]
     -- ^ The files from which the 'Config' was loaded.
     , cfgMap :: IORef (H.HashMap Name Value)
     , cfgSubs :: IORef (H.HashMap Pattern [ChangeHandler])

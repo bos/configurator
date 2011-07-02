@@ -36,6 +36,7 @@ module Data.Configurator
       Worth(..)
     -- * Loading configuration data
     , autoReload
+    , autoReloadGroups
     , autoConfig
     , empty
     -- * Lookup functions
@@ -49,6 +50,7 @@ module Data.Configurator
     , subscribe
     -- * Low-level loading functions
     , load
+    , loadGroups
     , reload
     -- * Helper functions
     , display
@@ -63,7 +65,7 @@ import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
 import Data.Configurator.Types.Internal
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
-import Data.Maybe (catMaybes, fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (mconcat)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
 import Data.Text.Lazy.Builder.Int (decimal)
@@ -87,11 +89,11 @@ loadFiles = foldM go H.empty
      let rewrap n = const n <$> path
          wpath = worth path
      path' <- rewrap <$> interpolate wpath H.empty
-     ds <- loadOne (T.unpack <$> path')
+     ds    <- loadOne (T.unpack <$> path')
      let !seen'    = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
      foldM go seen' . filter notSeen . importsOf $ ds
-  
+
 -- | Create a 'Config' from the contents of the named files. Throws an
 -- exception on error, such as if files do not exist or contain errors.
 --
@@ -99,17 +101,24 @@ loadFiles = foldM go H.empty
 -- first time they are opened, so you can specify a file name such as
 -- @\"$(HOME)/myapp.cfg\"@.
 load :: [Worth FilePath] -> IO Config
-load = load' Nothing
+load files = load' Nothing (map (\f -> ("", f)) files)
 
-load' :: Maybe AutoConfig -> [Worth FilePath] -> IO Config
+-- | Create a 'Config' from the contents of the named files, placing them
+-- into named prefixes.  If a prefix is non-empty, it should end in a
+-- dot.
+loadGroups :: [(Name, Worth FilePath)] -> IO Config
+loadGroups = load' Nothing
+
+load' :: Maybe AutoConfig -> [(Name, Worth FilePath)] -> IO Config
 load' auto paths0 = do
-  let paths = map (fmap T.pack) paths0
-  ds <- loadFiles paths
+  let second f (x,y) = (x, f y)
+      paths          = map (second (fmap T.pack)) paths0
+  ds <- loadFiles (map snd paths)
   m <- newIORef =<< flatten paths ds
   s <- newIORef H.empty
   return Config {
                 cfgAuto = auto
-              , cfgPaths = H.keys ds
+              , cfgPaths = paths
               , cfgMap = m
               , cfgSubs = s
               }
@@ -118,7 +127,7 @@ load' auto paths0 = do
 -- if files no longer exist or contain errors.
 reload :: Config -> IO ()
 reload cfg@Config{..} = do
-  m' <- flatten cfgPaths =<< loadFiles cfgPaths
+  m' <- flatten cfgPaths =<< loadFiles (map snd cfgPaths)
   m <- atomicModifyIORef cfgMap $ \m -> (m', m)
   notifySubscribers cfg m m' =<< readIORef cfgSubs
 
@@ -151,18 +160,24 @@ autoReload :: AutoConfig
            -> [Worth FilePath]
            -- ^ Configuration files to load.
            -> IO (Config, ThreadId)
-autoReload AutoConfig{..} _
-    | interval < 1 = error "autoReload: negative interval"
-autoReload _ []    = error "autoReload: no paths to load"
-autoReload auto@AutoConfig{..} paths = do
+autoReload auto paths = autoReloadGroups auto (map (\x -> ("", x)) paths)
+
+autoReloadGroups :: AutoConfig
+                 -> [(Name, Worth FilePath)]
+                 -> IO (Config, ThreadId)
+autoReloadGroups AutoConfig{..} _
+    | interval < 1    = error "autoReload: negative interval"
+autoReloadGroups _ [] = error "autoReload: no paths to load"
+autoReloadGroups auto@AutoConfig{..} paths = do
   cfg <- load' (Just auto) paths
-  let loop meta = do
+  let files = map snd paths
+      loop meta = do
         threadDelay (max interval 1 * 1000000)
-        meta' <- getMeta paths
+        meta' <- getMeta files
         if meta' == meta
           then loop meta
           else (reload cfg `catch` onError) >> loop meta'
-  tid <- forkIO $ loop =<< getMeta paths
+  tid <- forkIO $ loop =<< getMeta files
   return (cfg, tid)
   
 -- | Save both a file's size and its last modification date, so we
@@ -211,10 +226,15 @@ display Config{..} = print =<< readIORef cfgMap
 getMap :: Config -> IO (H.HashMap Name Value)
 getMap = readIORef . cfgMap
 
-flatten :: [Worth Path] -> H.HashMap (Worth Path) [Directive] -> IO (H.HashMap Name Value)
-flatten roots files = foldM (directive "") H.empty .
-                      concat . catMaybes . map (`H.lookup` files) $ roots
+flatten :: [(Name, Worth Path)]
+        -> H.HashMap (Worth Path) [Directive]
+        -> IO (H.HashMap Name Value)
+flatten roots files = foldM doPath H.empty roots
  where
+  doPath m (pfx, f) = case H.lookup f files of
+        Nothing -> return m
+        Just ds -> foldM (directive pfx) m ds
+
   directive pfx m (Bind name (String value)) = do
       v <- interpolate value m
       return $! H.insert (T.append pfx name) (String v) m
