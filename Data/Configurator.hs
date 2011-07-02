@@ -454,8 +454,10 @@ empty = unsafePerformIO $ do
 --
 -- > import "$(HOME)/etc/myapp.cfg"
 --
--- It is an error for an @import@ directive to name a file that does
--- not exist, cannot be read, or contains errors.
+-- Absolute paths are imported as is.  Relative paths are resolved with
+-- respect to the file they are imported from.  It is an error for an
+-- @import@ directive to name a file that does not exist, cannot be read,
+-- or contains errors.
 --
 -- If an @import@ appears inside a group, the group's naming prefix
 -- will be applied to all of the names imported from the given
