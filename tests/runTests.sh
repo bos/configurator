@@ -10,7 +10,8 @@ HPCDIR=dist/hpc
 rm -rf $HPCDIR
 mkdir -p $HPCDIR
 
-EXCLUDES='--exclude=Main'
+EXCLUDES='--exclude=Main
+          --exclude=Data.Configurator.Types'
 hpc markup $EXCLUDES --destdir=$HPCDIR configurator-test
 
 rm -f configurator-test.tix
