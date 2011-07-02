@@ -12,7 +12,7 @@ import           Data.Configurator
 import           Data.Configurator.Types
 import           Data.Functor
 import           Data.Maybe
-import           Data.Text ()
+import           Data.Text (Text)
 import qualified Data.ByteString.Lazy.Char8 as L
 import           System.Directory
 import           System.IO
@@ -66,12 +66,33 @@ takeMVarTimeout millis v = do
     takeMVar w
 
 loadTest :: Assertion
-loadTest = withLoad [Required "pathological.cfg"] $ \cfg -> do
-    aa <- lookup cfg "aa"
-    assertEqual "simple property 1" aa $ Just (1 :: Int)
+loadTest = withLoad [Required "resources/pathological.cfg"] $ \cfg -> do
+    aa  <- lookup cfg "aa"
+    assertEqual "int property" aa $ (Just 1 :: Maybe Int)
+
+    ab  <- lookup cfg "ab"
+    assertEqual "string property" ab (Just "foo" :: Maybe Text)
+
+    acx <- lookup cfg "ac.x"
+    assertEqual "nested int" acx (Just 1 :: Maybe Int)
+
+    acy <- lookup cfg "ac.y"
+    assertEqual "nested bool" acy (Just True :: Maybe Bool)
+
+    ad <- lookup cfg "ad"
+    assertEqual "simple bool" ad (Just False :: Maybe Bool)
+
+    ae <- lookup cfg "ae"
+    assertEqual "simple int 2" ae (Just 1 :: Maybe Int)
+
+    af <- lookup cfg "af"
+    assertEqual "list property" af (Just (2,3) :: Maybe (Int,Int))
+
+    deep <- lookup cfg "ag.q-e.i_u9.a"
+    assertEqual "deep bool" deep (Just False :: Maybe Bool)
 
 reloadTest :: Assertion
-reloadTest = withReload [Required "pathological.cfg"] $ \[Just f] cfg -> do
+reloadTest = withReload [Required "resources/pathological.cfg"] $ \[Just f] cfg -> do
     aa <- lookup cfg "aa"
     assertEqual "simple property 1" aa $ Just (1 :: Int)
 
