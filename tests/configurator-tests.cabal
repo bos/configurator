@@ -1,0 +1,18 @@
+Name:                configurator-tests
+Version:             0.1
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+Executable configurator-test
+  Main-is:           Test.hs
+  Hs-source-dirs:    ., ..
+  Build-depends:     base,
+                     directory,
+                     HUnit,
+                     text,
+                     attoparsec-text,
+                     unordered-containers,
+                     unix-compat,
+                     hashable,
+                     bytestring
+  Ghc-options:       -Wall -fhpc -fno-warn-unused-do-bind

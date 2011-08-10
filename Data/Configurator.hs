@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns, OverloadedStrings, RecordWildCards,
-    ScopedTypeVariables #-}
+    ScopedTypeVariables, TupleSections #-}
 
 -- |
 -- Module:      Data.Configurator
@@ -36,6 +36,7 @@ module Data.Configurator
       Worth(..)
     -- * Loading configuration data
     , autoReload
+    , autoReloadGroups
     , autoConfig
     , empty
     -- * Lookup functions
@@ -49,7 +50,11 @@ module Data.Configurator
     , subscribe
     -- * Low-level loading functions
     , load
+    , loadGroups
     , reload
+    , subconfig
+    , addToConfig
+    , addGroupsToConfig
     -- * Helper functions
     , display
     , getMap
@@ -63,7 +68,7 @@ import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
 import Data.Configurator.Types.Internal
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
-import Data.Maybe (catMaybes, fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (mconcat)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
 import Data.Text.Lazy.Builder.Int (decimal)
@@ -87,11 +92,11 @@ loadFiles = foldM go H.empty
      let rewrap n = const n <$> path
          wpath = worth path
      path' <- rewrap <$> interpolate wpath H.empty
-     ds <- loadOne (T.unpack <$> path')
+     ds    <- loadOne (T.unpack <$> path')
      let !seen'    = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
-     foldM go seen' . filter notSeen . importsOf $ ds
-  
+     foldM go seen' . filter notSeen . importsOf wpath $ ds
+
 -- | Create a 'Config' from the contents of the named files. Throws an
 -- exception on error, such as if files do not exist or contain errors.
 --
@@ -99,28 +104,63 @@ loadFiles = foldM go H.empty
 -- first time they are opened, so you can specify a file name such as
 -- @\"$(HOME)/myapp.cfg\"@.
 load :: [Worth FilePath] -> IO Config
-load = load' Nothing
+load files = fmap (Config "") $ load' Nothing (map (\f -> ("", f)) files)
 
-load' :: Maybe AutoConfig -> [Worth FilePath] -> IO Config
+-- | Create a 'Config' from the contents of the named files, placing them
+-- into named prefixes.  If a prefix is non-empty, it should end in a
+-- dot.
+loadGroups :: [(Name, Worth FilePath)] -> IO Config
+loadGroups files = fmap (Config "") $ load' Nothing files
+
+load' :: Maybe AutoConfig -> [(Name, Worth FilePath)] -> IO BaseConfig
 load' auto paths0 = do
-  let paths = map (fmap T.pack) paths0
-  ds <- loadFiles paths
+  let second f (x,y) = (x, f y)
+      paths          = map (second (fmap T.pack)) paths0
+  ds <- loadFiles (map snd paths)
+  p <- newIORef paths
   m <- newIORef =<< flatten paths ds
   s <- newIORef H.empty
-  return Config {
+  return BaseConfig {
                 cfgAuto = auto
-              , cfgPaths = H.keys ds
+              , cfgPaths = p
               , cfgMap = m
               , cfgSubs = s
               }
 
+-- | Gives a 'Config' corresponding to just a single group of the original
+-- 'Config'.  The subconfig can be used just like the original 'Config', but
+-- see the documentation for 'reload'.
+subconfig :: Name -> Config -> Config
+subconfig g (Config root cfg) = Config (T.concat [root, g, "."]) cfg
+
 -- | Forcibly reload a 'Config'. Throws an exception on error, such as
--- if files no longer exist or contain errors.
+-- if files no longer exist or contain errors.  If the provided 'Config' is
+-- a 'subconfig', this will reload the entire top-level configuration, not just
+-- the local section.
 reload :: Config -> IO ()
-reload cfg@Config{..} = do
-  m' <- flatten cfgPaths =<< loadFiles cfgPaths
+reload (Config _ cfg@BaseConfig{..}) = reloadBase cfg
+
+reloadBase :: BaseConfig -> IO ()
+reloadBase cfg@BaseConfig{..} = do
+  paths <- readIORef cfgPaths
+  m' <- flatten paths =<< loadFiles (map snd paths)
   m <- atomicModifyIORef cfgMap $ \m -> (m', m)
   notifySubscribers cfg m m' =<< readIORef cfgSubs
+
+-- | Add additional files to a 'Config', causing it to be reloaded to add
+-- their contents.
+addToConfig :: [Worth FilePath] -> Config -> IO ()
+addToConfig paths0 cfg = addGroupsToConfig (map (\x -> ("",x)) paths0) cfg
+
+-- | Add additional files to named groups in a 'Config', causing it to be
+-- reloaded to add their contents.  If the prefixes are non-empty, they should
+-- end in dots.
+addGroupsToConfig :: [(Name, Worth FilePath)] -> Config -> IO ()
+addGroupsToConfig paths0 (Config root cfg@BaseConfig{..}) = do
+  let fix (x,y) = (root `T.append` x, fmap T.pack y)
+      paths     = map fix paths0
+  atomicModifyIORef cfgPaths $ \prev -> (prev ++ paths, ())
+  reloadBase cfg
 
 -- | Defaults for automatic 'Config' reloading when using
 -- 'autoReload'.  The 'interval' is one second, while the 'onError'
@@ -151,19 +191,25 @@ autoReload :: AutoConfig
            -> [Worth FilePath]
            -- ^ Configuration files to load.
            -> IO (Config, ThreadId)
-autoReload AutoConfig{..} _
-    | interval < 1 = error "autoReload: negative interval"
-autoReload _ []    = error "autoReload: no paths to load"
-autoReload auto@AutoConfig{..} paths = do
+autoReload auto paths = autoReloadGroups auto (map (\x -> ("", x)) paths)
+
+autoReloadGroups :: AutoConfig
+                 -> [(Name, Worth FilePath)]
+                 -> IO (Config, ThreadId)
+autoReloadGroups AutoConfig{..} _
+    | interval < 1    = error "autoReload: negative interval"
+autoReloadGroups _ [] = error "autoReload: no paths to load"
+autoReloadGroups auto@AutoConfig{..} paths = do
   cfg <- load' (Just auto) paths
-  let loop meta = do
+  let files = map snd paths
+      loop meta = do
         threadDelay (max interval 1 * 1000000)
-        meta' <- getMeta paths
+        meta' <- getMeta files
         if meta' == meta
           then loop meta
-          else (reload cfg `catch` onError) >> loop meta'
-  tid <- forkIO $ loop =<< getMeta paths
-  return (cfg, tid)
+          else (reloadBase cfg `catch` onError) >> loop meta'
+  tid <- forkIO $ loop =<< getMeta files
+  return (Config "" cfg, tid)
   
 -- | Save both a file's size and its last modification date, so we
 -- have a better chance of detecting a modification on a crappy
@@ -180,15 +226,15 @@ getMeta paths = forM paths $ \path ->
 -- the value can be 'convert'ed to the desired type, return the
 -- converted value, otherwise 'Nothing'.
 lookup :: Configured a => Config -> Name -> IO (Maybe a)
-lookup Config{..} name =
-    (join . fmap convert . H.lookup name) <$> readIORef cfgMap
+lookup (Config root BaseConfig{..}) name =
+    (join . fmap convert . H.lookup (root `T.append` name)) <$> readIORef cfgMap
 
 -- | Look up a name in the given 'Config'.  If a binding exists, and
 -- the value can be 'convert'ed to the desired type, return the
 -- converted value, otherwise throw a 'KeyError'.
 require :: Configured a => Config -> Name -> IO a
-require Config{..} name = do
-  val <- (join . fmap convert . H.lookup name) <$> readIORef cfgMap
+require cfg name = do
+  val <- lookup cfg name
   case val of
     Just v -> return v
     _      -> throwIO . KeyError $ name
@@ -205,27 +251,33 @@ lookupDefault def cfg name = fromMaybe def <$> lookup cfg name
 
 -- | Perform a simple dump of a 'Config' to @stdout@.
 display :: Config -> IO ()
-display Config{..} = print =<< readIORef cfgMap
+display (Config root BaseConfig{..}) = print . (root,) =<< readIORef cfgMap
 
 -- | Fetch the 'H.HashMap' that maps names to values.
 getMap :: Config -> IO (H.HashMap Name Value)
-getMap = readIORef . cfgMap
+getMap = readIORef . cfgMap . baseCfg
 
-flatten :: [Worth Path] -> H.HashMap (Worth Path) [Directive] -> IO (H.HashMap Name Value)
-flatten roots files = foldM (directive "") H.empty .
-                      concat . catMaybes . map (`H.lookup` files) $ roots
+flatten :: [(Name, Worth Path)]
+        -> H.HashMap (Worth Path) [Directive]
+        -> IO (H.HashMap Name Value)
+flatten roots files = foldM doPath H.empty roots
  where
-  directive pfx m (Bind name (String value)) = do
+  doPath m (pfx, f) = case H.lookup f files of
+        Nothing -> return m
+        Just ds -> foldM (directive pfx (worth f)) m ds
+
+  directive pfx _ m (Bind name (String value)) = do
       v <- interpolate value m
       return $! H.insert (T.append pfx name) (String v) m
-  directive pfx m (Bind name value) =
+  directive pfx _ m (Bind name value) =
       return $! H.insert (T.append pfx name) value m
-  directive pfx m (Group name xs) = foldM (directive pfx') m xs
+  directive pfx f m (Group name xs) = foldM (directive pfx' f) m xs
       where pfx' = T.concat [pfx, name, "."]
-  directive pfx m (Import path) =
-      case H.lookup (Required path) files of
-        Just ds -> foldM (directive pfx) m ds
-        _       -> return m
+  directive pfx f m (Import path) =
+      let f' = relativize f path
+      in  case H.lookup (Required (relativize f path)) files of
+            Just ds -> foldM (directive pfx f') m ds
+            _       -> return m
 
 interpolate :: T.Text -> H.HashMap Name Value -> IO T.Text
 interpolate s env
@@ -248,11 +300,17 @@ interpolate s env
                 throwIO . ParseError "" $ "no such variable " ++ show name
             Right x -> return (fromString x)
 
-importsOf :: [Directive] -> [Worth Path]
-importsOf (Import path : xs) = Required path : importsOf xs
-importsOf (Group _ ys : xs)  = importsOf ys ++ importsOf xs
-importsOf (_ : xs)           = importsOf xs
-importsOf _                  = []
+importsOf :: Path -> [Directive] -> [Worth Path]
+importsOf path (Import ref : xs) = Required (relativize path ref)
+                                 : importsOf path xs
+importsOf path (Group _ ys : xs) = importsOf path ys ++ importsOf path xs
+importsOf path (_ : xs)          = importsOf path xs
+importsOf _    _                 = []
+
+relativize :: Path -> Path -> Path
+relativize parent child
+  | T.head child == '/' = child
+  | otherwise           = fst (T.breakOnEnd "/" parent) `T.append` child
 
 loadOne :: Worth FilePath -> IO [Directive]
 loadOne path = do
@@ -274,14 +332,18 @@ loadOne path = do
 -- when any change occurs to a configuration property matching the
 -- supplied pattern.
 subscribe :: Config -> Pattern -> ChangeHandler -> IO ()
-subscribe Config{..} pat act = do
+subscribe (Config root BaseConfig{..}) pat act = do
   m' <- atomicModifyIORef cfgSubs $ \m ->
-        let m' = H.insertWith (++) pat [act] m in (m', m')
+        let m' = H.insertWith (++) (localPattern root pat) [act] m in (m', m')
   evaluate m' >> return ()
 
-notifySubscribers :: Config -> H.HashMap Name Value -> H.HashMap Name Value
+localPattern :: Name -> Pattern -> Pattern
+localPattern pfx (Exact  s) = Exact  (pfx `T.append` s)
+localPattern pfx (Prefix s) = Prefix (pfx `T.append` s)
+
+notifySubscribers :: BaseConfig -> H.HashMap Name Value -> H.HashMap Name Value
                   -> H.HashMap Pattern [ChangeHandler] -> IO ()
-notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
+notifySubscribers BaseConfig{..} m m' subs = H.foldrWithKey go (return ()) subs
  where
   changedOrGone = H.foldrWithKey check [] m
       where check n v nvs = case H.lookup n m' of
@@ -306,12 +368,13 @@ notifySubscribers Config{..} m m' subs = H.foldrWithKey go (return ()) subs
 
 -- | A completely empty configuration.
 empty :: Config
-empty = unsafePerformIO $ do
+empty = Config "" $ unsafePerformIO $ do
+          p <- newIORef []
           m <- newIORef H.empty
           s <- newIORef H.empty
-          return Config {
+          return BaseConfig {
                        cfgAuto = Nothing
-                     , cfgPaths = []
+                     , cfgPaths = p
                      , cfgMap = m
                      , cfgSubs = s
                      }
@@ -427,8 +490,10 @@ empty = unsafePerformIO $ do
 --
 -- > import "$(HOME)/etc/myapp.cfg"
 --
--- It is an error for an @import@ directive to name a file that does
--- not exist, cannot be read, or contains errors.
+-- Absolute paths are imported as is.  Relative paths are resolved with
+-- respect to the file they are imported from.  It is an error for an
+-- @import@ directive to name a file that does not exist, cannot be read,
+-- or contains errors.
 --
 -- If an @import@ appears inside a group, the group's naming prefix
 -- will be applied to all of the names imported from the given
