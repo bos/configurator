@@ -72,6 +72,8 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (mconcat)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
 import Data.Text.Lazy.Builder.Int (decimal)
+import Data.Text.Lazy.Builder.RealFloat (realFloat)
+import Data.Ratio (denominator, numerator)
 import Prelude hiding (catch, lookup)
 import System.Environment (getEnv)
 import System.IO (hPutStrLn, stderr)
@@ -291,7 +293,11 @@ interpolate s env
   interpret (Interpolate name) =
       case H.lookup name env of
         Just (String x) -> return (fromText x)
-        Just (Number n) -> return (decimal n)
+        Just (Number r)
+            | denominator r == 1 -> return (decimal $ numerator r)
+            | otherwise -> return $ realFloat (fromRational r :: Double)
+                           -- TODO: Use a dedicated Builder for Rationals instead of
+                           -- using realFloat on a Double.
         Just _          -> error "type error"
         _ -> do
           e <- try . getEnv . T.unpack $ name
