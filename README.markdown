@@ -29,11 +29,11 @@ We are happy to receive bug reports, fixes, documentation enhancements,
 and other improvements.
 
 Please report bugs via the
-[github issue tracker](http://github.com/mailrank/configurator/issues).
+[github issue tracker](http://github.com/bos/configurator/issues).
 
-Master [git repository](http://github.com/mailrank/configurator):
+Master [git repository](http://github.com/bos/configurator):
 
-* `git clone git://github.com/mailrank/configurator.git`
+* `git clone git://github.com/bos/configurator.git`
 
 There's also a [Mercurial mirror](http://bitbucket.org/bos/configurator):
 
@@ -45,4 +45,4 @@ Authors
 -------
 
 This library is written and maintained by Bryan O'Sullivan,
-<bos@mailrank.com>.
+<bos@serpentine.com>.
