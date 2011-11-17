@@ -5,9 +5,13 @@ module Data.Configurator.Instances () where
 
 import Control.Applicative
 import Data.Configurator.Types.Internal
+import Data.Complex (Complex)
+import Data.Fixed (Fixed, HasResolution)
 import Data.Int (Int8, Int16, Int32, Int64)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Ratio (Ratio, denominator, numerator)
 import Data.Word (Word, Word8, Word16, Word32, Word64)
+import Foreign.C.Types (CDouble, CFloat)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.Text as T
@@ -20,42 +24,68 @@ instance Configured Bool where
     convert (Bool v) = Just v
     convert _        = Nothing
 
-convertNumber :: (Num a) => Value -> Maybe a
-convertNumber (Number v) = Just (fromIntegral v)
-convertNumber _          = Nothing
+convertNumberToNum :: (Num a) => Value -> Maybe a
+convertNumberToNum (Number r)
+    | denominator r == 1 = Just $ fromInteger $ numerator r
+convertNumberToNum _ = Nothing
 
 instance Configured Int where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Integer where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Int8 where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Int16 where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Int32 where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Int64 where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Word where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Word8 where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Word16 where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Word32 where
-    convert = convertNumber
+    convert = convertNumberToNum
 
 instance Configured Word64 where
-    convert = convertNumber
+    convert = convertNumberToNum
+
+convertNumberToFractional :: (Fractional a) => Value -> Maybe a
+convertNumberToFractional (Number r) = Just $ fromRational r
+convertNumberToFractional _ = Nothing
+
+instance Configured Double where
+    convert = convertNumberToFractional
+
+instance Configured Float where
+    convert = convertNumberToFractional
+
+instance Configured CDouble where
+    convert = convertNumberToFractional
+
+instance Configured CFloat where
+    convert = convertNumberToFractional
+
+instance Integral a => Configured (Ratio a) where
+    convert = convertNumberToFractional
+
+instance RealFloat a => Configured (Complex a) where
+    convert = convertNumberToFractional
+
+instance HasResolution a => Configured (Fixed a) where
+    convert = convertNumberToFractional
 
 instance Configured T.Text where
     convert (String v) = Just v
