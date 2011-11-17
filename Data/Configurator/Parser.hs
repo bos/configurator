@@ -84,7 +84,7 @@ value = mconcat [
         , string "true" *> pure (Bool True)
         , string "false" *> pure (Bool False)
         , String <$> string_
-        , Number <$> decimal
+        , Number <$> rational
         , List <$> brackets '[' ']'
                    ((value <* skipLWS) `sepBy` (char ',' <* skipLWS))
         ]
