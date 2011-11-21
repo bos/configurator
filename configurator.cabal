@@ -55,7 +55,7 @@ library
     Data.Configurator.Types.Internal
 
   build-depends:
-    attoparsec-text >= 0.8.5.1,
+    attoparsec >= 0.10.0.2,
     base == 4.*,
     bytestring,
     directory,
