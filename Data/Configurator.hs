@@ -291,15 +291,13 @@ interpolate pfx s env
     | otherwise = return s
  where
   lookupEnv name = msum $ map (flip H.lookup env) fullnames
-    where fullnames = if T.null pfx
-                         then [name]
-                         else map (T.intercalate ".") -- ["a.b.c.x","a.b.x","a.x","x"]
-                            . map (reverse . (name:)) -- [["a","b","c","x"],["a","b","x"],["a","x"],["x"]]
-                            . tails                   -- [["c","b","a"],["b","a"],["a"],[]]
-                            . reverse                 -- ["c","b","a"]
-                            . filter (not . T.null)   -- ["a","b","c"]
-                            . T.split (=='.')         -- ["a","b","c",""]
-                            $ pfx                     -- "a.b.c."
+    where fullnames = map (T.intercalate ".")     -- ["a.b.c.x","a.b.x","a.x","x"]
+                    . map (reverse . (name:)) -- [["a","b","c","x"],["a","b","x"],["a","x"],["x"]]
+                    . tails                   -- [["c","b","a"],["b","a"],["a"],[]]
+                    . reverse                 -- ["c","b","a"]
+                    . filter (not . T.null)   -- ["a","b","c"]
+                    . T.split (=='.')         -- ["a","b","c",""]
+                    $ pfx                     -- "a.b.c."
 
   interpret (Literal x)   = return (fromText x)
   interpret (Interpolate name) =
