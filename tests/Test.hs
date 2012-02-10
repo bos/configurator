@@ -25,12 +25,13 @@ main :: IO ()
 main = runTestTT tests >> return ()
 
 tests :: Test
-tests = TestList [
-    "load"   ~: loadTest,
-    "types"  ~: typesTest,
-    "interp" ~: interpTest,
-    "import" ~: importTest,
-    "reload" ~: reloadTest
+tests = TestList
+    [ "load"   ~: loadTest
+    , "types"  ~: typesTest
+    , "interp" ~: interpTest
+    , "scoped-interp"  ~: scopedInterpTest
+    , "import" ~: importTest
+    , "reload" ~: reloadTest
     ]
 
 withLoad :: [Worth FilePath] -> (Config -> IO ()) -> IO ()
@@ -144,6 +145,14 @@ interpTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
     cfgHome <- lookup cfg "ba"
     assertEqual "home interp" (Just home) cfgHome
 
+scopedInterpTest :: Assertion
+scopedInterpTest = withLoad [Required "resources/interp.cfg"] $ \ cfg -> do
+    home    <- getEnv "HOME"
+    exec    <- lookup cfg "myprogram.exec"
+    stdout' <- lookup cfg "myprogram.stdout"
+    assertEqual "myprogram.exec" exec (Just $ home++"/services/myprogram/myprogram")
+    assertEqual "myprogram.stdout" stdout' (Just $ home++"/services/myprogram/stdout")
+
 importTest :: Assertion
 importTest = withLoad [Required "resources/import.cfg"] $ \ cfg -> do
     aa  <- lookup cfg "x.aa" :: IO (Maybe Int)
@@ -165,4 +174,3 @@ reloadTest = withReload [Required "resources/pathological.cfg"] $ \[Just f] cfg 
     assertEqual "notify happened" r1 (Just ())
     r2 <- takeMVarTimeout 2000 wongly
     assertEqual "notify not happened" r2 Nothing
-

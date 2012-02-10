@@ -60,7 +60,7 @@ module Data.Configurator
     , getMap
     ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<|>))
 import Control.Concurrent (ThreadId, forkIO, threadDelay)
 import Control.Exception (SomeException, catch, evaluate, handle, throwIO, try)
 import Control.Monad (foldM, forM, forM_, join, when)
@@ -93,7 +93,7 @@ loadFiles = foldM go H.empty
    go seen path = do
      let rewrap n = const n <$> path
          wpath = worth path
-     path' <- rewrap <$> interpolate wpath H.empty
+     path' <- rewrap <$> interpolate "" wpath H.empty
      ds    <- loadOne (T.unpack <$> path')
      let !seen'    = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
@@ -269,7 +269,7 @@ flatten roots files = foldM doPath H.empty roots
         Just ds -> foldM (directive pfx (worth f)) m ds
 
   directive pfx _ m (Bind name (String value)) = do
-      v <- interpolate value m
+      v <- interpolate pfx value m
       return $! H.insert (T.append pfx name) (String v) m
   directive pfx _ m (Bind name value) =
       return $! H.insert (T.append pfx name) value m
@@ -281,17 +281,21 @@ flatten roots files = foldM doPath H.empty roots
             Just ds -> foldM (directive pfx f') m ds
             _       -> return m
 
-interpolate :: T.Text -> H.HashMap Name Value -> IO T.Text
-interpolate s env
+interpolate :: T.Text -> T.Text -> H.HashMap Name Value -> IO T.Text
+interpolate pfx s env
     | "$" `T.isInfixOf` s =
       case T.parseOnly interp s of
         Left err   -> throwIO $ ParseError "" err
         Right xs -> (L.toStrict . toLazyText . mconcat) <$> mapM interpret xs
     | otherwise = return s
  where
+  lookupInterp name =
+          H.lookup name env
+      <|> H.lookup (pfx `T.append` name) env
+
   interpret (Literal x)   = return (fromText x)
   interpret (Interpolate name) =
-      case H.lookup name env of
+      case lookupInterp name of
         Just (String x) -> return (fromText x)
         Just (Number r)
             | denominator r == 1 -> return (decimal $ numerator r)

@@ -10,7 +10,7 @@ Executable configurator-test
                      directory,
                      HUnit,
                      text,
-                     attoparsec-text,
+                     attoparsec,
                      unordered-containers,
                      unix-compat,
                      hashable,
