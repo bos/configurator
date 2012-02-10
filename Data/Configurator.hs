@@ -290,8 +290,8 @@ interpolate pfx s env
     | otherwise = return s
  where
   lookupInterp name =
-          H.lookup name env
-      <|> H.lookup (pfx `T.append` name) env
+          H.lookup (pfx `T.append` name) env
+      <|> H.lookup name env
 
   interpret (Literal x)   = return (fromText x)
   interpret (Interpolate name) =
