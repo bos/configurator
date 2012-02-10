@@ -148,10 +148,15 @@ interpTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
 scopedInterpTest :: Assertion
 scopedInterpTest = withLoad [Required "resources/interp.cfg"] $ \ cfg -> do
     home    <- getEnv "HOME"
-    exec    <- lookup cfg "myprogram.exec"
-    stdout' <- lookup cfg "myprogram.stdout"
-    assertEqual "myprogram.exec" exec (Just $ home++"/services/myprogram/myprogram")
-    assertEqual "myprogram.stdout" stdout' (Just $ home++"/services/myprogram/stdout")
+
+    lookup cfg "myprogram.exec"
+        >>= assertEqual "myprogram.exec" (Just $ home++"/services/myprogram/myprogram")
+
+    lookup cfg "myprogram.stdout"
+        >>= assertEqual "myprogram.stdout" (Just $ home++"/services/myprogram/stdout")
+
+    lookup cfg "top.layer1.layer2.dir"
+        >>= assertEqual "nested scope" (Just $ home++"/top/layer1/layer2")
 
 importTest :: Assertion
 importTest = withLoad [Required "resources/import.cfg"] $ \ cfg -> do

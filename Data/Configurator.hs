@@ -60,14 +60,15 @@ module Data.Configurator
     , getMap
     ) where
 
-import Control.Applicative ((<$>), (<|>))
+import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId, forkIO, threadDelay)
 import Control.Exception (SomeException, catch, evaluate, handle, throwIO, try)
-import Control.Monad (foldM, forM, forM_, join, when)
+import Control.Monad (foldM, forM, forM_, join, when, msum)
 import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
 import Data.Configurator.Types.Internal
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
+import Data.List (tails)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (mconcat)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
@@ -289,13 +290,20 @@ interpolate pfx s env
         Right xs -> (L.toStrict . toLazyText . mconcat) <$> mapM interpret xs
     | otherwise = return s
  where
-  lookupInterp name =
-          H.lookup (pfx `T.append` name) env
-      <|> H.lookup name env
+  lookupEnv name = msum $ map (flip H.lookup env) fullnames
+    where fullnames = if T.null pfx
+                         then [name]
+                         else map (T.intercalate ".") -- ["a.b.c.x","a.b.x","a.x","x"]
+                            . map (reverse . (name:)) -- [["a","b","c","x"],["a","b","x"],["a","x"],["x"]]
+                            . tails                   -- [["c","b","a"],["b","a"],["a"],[]]
+                            . reverse                 -- ["c","b","a"]
+                            . filter (not . T.null)   -- ["a","b","c"]
+                            . T.split (=='.')         -- ["a","b","c",""]
+                            $ pfx                     -- "a.b.c."
 
   interpret (Literal x)   = return (fromText x)
   interpret (Interpolate name) =
-      case lookupInterp name of
+      case lookupEnv name of
         Just (String x) -> return (fromText x)
         Just (Number r)
             | denominator r == 1 -> return (decimal $ numerator r)
