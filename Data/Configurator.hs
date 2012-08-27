@@ -62,7 +62,7 @@ module Data.Configurator
 
 import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId, forkIO, threadDelay)
-import Control.Exception (SomeException, catch, evaluate, handle, throwIO, try)
+import Control.Exception (SomeException, evaluate, handle, throwIO, try)
 import Control.Monad (foldM, forM, forM_, join, when)
 import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
@@ -70,16 +70,17 @@ import Data.Configurator.Types.Internal
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (mconcat)
+import Data.Ratio (denominator, numerator)
 import Data.Text.Lazy.Builder (fromString, fromText, toLazyText)
 import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
-import Data.Ratio (denominator, numerator)
-import Prelude hiding (catch, lookup)
+import Prelude hiding (lookup)
 import System.Environment (getEnv)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix.Types (EpochTime, FileOffset)
 import System.PosixCompat.Files (fileSize, getFileStatus, modificationTime)
+import qualified Control.Exception as E
 import qualified Data.Attoparsec.Text as T
 import qualified Data.Attoparsec.Text.Lazy as L
 import qualified Data.HashMap.Lazy as H
@@ -209,10 +210,10 @@ autoReloadGroups auto@AutoConfig{..} paths = do
         meta' <- getMeta files
         if meta' == meta
           then loop meta
-          else (reloadBase cfg `catch` onError) >> loop meta'
+          else (reloadBase cfg `E.catch` onError) >> loop meta'
   tid <- forkIO $ loop =<< getMeta files
   return (Config "" cfg, tid)
-  
+
 -- | Save both a file's size and its last modification date, so we
 -- have a better chance of detecting a modification on a crappy
 -- filesystem with timestamp resolution of 1 second or worse.
@@ -327,7 +328,7 @@ loadOne path = do
                                    _          -> return []
     Right s -> do
             p <- evaluate (L.eitherResult $ L.parse topLevel s)
-                 `catch` \(e::ConfigError) ->
+                 `E.catch` \(e::ConfigError) ->
                  throwIO $ case e of
                              ParseError _ err -> ParseError (worth path) err
             case p of
@@ -360,7 +361,7 @@ notifySubscribers BaseConfig{..} m m' subs = H.foldrWithKey go (return ()) subs
       where check n v nvs = case H.lookup n m of
                               Nothing -> (n,v):nvs
                               _       -> nvs
-  notify p n v a = a n v `catch` maybe report onError cfgAuto
+  notify p n v a = a n v `E.catch` maybe report onError cfgAuto
     where report e = hPutStrLn stderr $
                      "*** a ChangeHandler threw an exception for " ++
                      show (p,n) ++ ": " ++ show e
