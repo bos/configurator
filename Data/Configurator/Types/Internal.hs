@@ -46,7 +46,7 @@ import qualified Data.HashMap.Lazy as H
 data Worth a = Required { worth :: a }
              | Optional { worth :: a }
                deriving (Show, Typeable)
-                    
+
 instance IsString (Worth FilePath) where
     fromString = Required
 
@@ -54,7 +54,7 @@ instance (Eq a) => Eq (Worth a) where
     a == b = worth a == worth b
 
 instance (Hashable a) => Hashable (Worth a) where
-    hash = hash . worth
+    hashWithSalt salt v = hashWithSalt salt (worth v)
 
 -- | Global configuration data.  This is the top-level config from which
 -- 'Config' values are derived by choosing a root location.
@@ -119,8 +119,8 @@ instance IsString Pattern where
         | otherwise           = Exact (T.pack s)
 
 instance Hashable Pattern where
-    hash (Exact n)  = hash n
-    hash (Prefix n) = hash n
+    hashWithSalt salt (Exact n)  = hashWithSalt salt n
+    hashWithSalt salt (Prefix n) = hashWithSalt salt n
 
 -- | This class represents types that can be automatically and safely
 -- converted /from/ a 'Value' /to/ a destination type.  If conversion
