@@ -131,6 +131,13 @@ instance Hashable Pattern where
 class Configured a where
     convert :: Value -> Maybe a
 
+    convertList :: Value -> Maybe [a]
+    convertList (List xs) = mapM convert xs
+    convertList _         = Nothing
+
+instance Configured a => Configured [a] where
+    convert = convertList
+
 -- | An error occurred while processing a configuration file.
 data ConfigError = ParseError FilePath String
                    deriving (Show, Typeable)

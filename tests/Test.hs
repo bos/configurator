@@ -133,10 +133,19 @@ typesTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
     assertEqual "word64" asWord64 (Just 1)
 
     asTextBad <- lookup cfg "aa" :: IO (Maybe Text)
-    assertEqual "word64" asTextBad Nothing
+    assertEqual "bad text" asTextBad Nothing
 
     asTextGood <- lookup cfg "ab" :: IO (Maybe Text)
-    assertEqual "word64" asTextGood (Just "foo")
+    assertEqual "good text" asTextGood (Just "foo")
+
+    asStringGood <- lookup cfg "ab" :: IO (Maybe String)
+    assertEqual "string" asStringGood (Just "foo")
+
+    asInts <- lookup cfg "xs" :: IO (Maybe [Int])
+    assertEqual "ints" asInts (Just [1,2,3])
+
+    asChar <- lookup cfg "c" :: IO (Maybe Char)
+    assertEqual "char" asChar (Just 'x')
 
 interpTest :: Assertion
 interpTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
@@ -165,4 +174,3 @@ reloadTest = withReload [Required "resources/pathological.cfg"] $ \[Just f] cfg 
     assertEqual "notify happened" r1 (Just ())
     r2 <- takeMVarTimeout 2000 wongly
     assertEqual "notify not happened" r2 Nothing
-
