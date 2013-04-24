@@ -197,5 +197,6 @@ testConfig =
 writeTest :: Assertion
 writeTest = do
     writeConfigFile "resources/testoutput.cfg" testConfig
-    assertBool "Maybe this is true" True
+    withLoad [Required "resources/pathological.cfg"] $ \_cfg -> do
+        assertBool "Failed to load write test file if here" True
     
