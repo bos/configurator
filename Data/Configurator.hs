@@ -55,6 +55,15 @@ module Data.Configurator
     , subconfig
     , addToConfig
     , addGroupsToConfig
+    -- * Generating a new configuration file
+    , emptyConfigFile
+    , addConfigFileComment
+    , addConfigFileNewline
+    , addConfigFileImport
+    , addConfigFileBind
+    , addConfigFileGroup
+    , configFileText
+    , writeConfigFile
     -- * Helper functions
     , display
     , getMap
@@ -85,6 +94,7 @@ import qualified Data.Attoparsec.Text as T
 import qualified Data.Attoparsec.Text.Lazy as L
 import qualified Data.HashMap.Lazy as H
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 
@@ -385,6 +395,46 @@ empty = Config "" $ unsafePerformIO $ do
                      , cfgMap = m
                      , cfgSubs = s
                      }
+
+emptyConfigFile :: ConfigFile
+emptyConfigFile = []
+
+addConfigFileComment :: T.Text -> ConfigFile -> ConfigFile
+addConfigFileComment t f = f ++ [FComment t]
+
+addConfigFileNewline :: ConfigFile -> ConfigFile
+addConfigFileNewline f = f ++ [FNewline]
+
+addConfigFileImport :: Path -> ConfigFile -> ConfigFile
+addConfigFileImport p f = f ++ [FImport p]
+
+addConfigFileBind :: Name -> T.Text -> ConfigFile -> ConfigFile
+addConfigFileBind n v f = f ++ [FBind n v]
+
+addConfigFileGroup :: Name -> ConfigFile -> ConfigFile -> ConfigFile
+addConfigFileGroup n sub f = f ++ [FGroup n sub]
+
+(##) :: T.Text -> T.Text -> T.Text
+(##) = T.append
+
+-- hws is shorthand for horizontal white space
+fileEntryAsText :: T.Text -> FileEntry -> T.Text
+fileEntryAsText hws (FComment c) = hws ## "# " ## c ## "\n"
+fileEntryAsText hws (FNewline) = "\n"
+fileEntryAsText hws (FImport p)  = hws ## "import \"" ## p ## "\"\n"
+fileEntryAsText hws (FBind n v)  = hws ## n ## " = " ## v ## "\n"
+fileEntryAsText hws (FGroup n f) =
+    hws ## n ## " {\n" ##
+        foldl (\acc new -> (##) acc $ fileEntryAsText (hws ## "  ") new) T.empty f ##
+        hws ## "}\n"
+
+configFileText :: ConfigFile -> T.Text
+configFileText [] = T.empty
+configFileText conf = foldl (\acc new -> (##) acc $ fileEntryAsText "" new) T.empty conf
+
+writeConfigFile :: FilePath -> ConfigFile -> IO ()
+writeConfigFile path conf = T.writeFile path $ configFileText conf
+
 {-# NOINLINE empty #-}
 
 -- $format

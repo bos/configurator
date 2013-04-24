@@ -22,6 +22,9 @@ module Data.Configurator.Types
     -- * Notification of configuration changes
     , Pattern
     , ChangeHandler
+    -- * Types for generating config files
+    , FileEntry(..)
+    , ConfigFile
     ) where
 
 import Data.Configurator.Types.Internal
