@@ -30,7 +30,8 @@ tests = TestList [
     "types"  ~: typesTest,
     "interp" ~: interpTest,
     "import" ~: importTest,
-    "reload" ~: reloadTest
+    "reload" ~: reloadTest,
+    "write"  ~: writeTest
     ]
 
 withLoad :: [Worth FilePath] -> (Config -> IO ()) -> IO ()
@@ -166,3 +167,36 @@ reloadTest = withReload [Required "resources/pathological.cfg"] $ \[Just f] cfg 
     r2 <- takeMVarTimeout 2000 wongly
     assertEqual "notify not happened" r2 Nothing
 
+testConfig :: ConfigFile
+testConfig =
+    [ FComment "This is a test comment"
+    , FComment "And here is a new one"
+    , FNewline
+    , FImport "pathological.cfg"
+    , FBind "myBindVar" "\"here's my bind string\""
+    , FBind "myInt" "32 # This is a trailing comment as part of a bind"
+    , FComment "Ok, let's try a group now"
+    , FGroup "group1"
+        [ FComment "Starting group 1"
+        , FBind "group1a" "7"
+        , FBind "group1b" "90"
+        , FGroup "group2"
+            [ FComment "I am nested!"
+            , FImport "import.cfg"
+            , FBind "group2a" "\"nested var\""
+            ]
+        , FComment "End the group"
+        ]
+    , FNewline
+    , FComment "A couple more binds for good measure"
+    , FBind "penultimate" "\"almost\""
+    , FBind "final" "\"there\""
+    ]
+
+
+writeTest :: Assertion
+writeTest = do
+    writeConfigFile "resources/testoutput.cfg" testConfig
+    withLoad [Required "resources/testoutput.cfg"] $ \_cfg -> do
+        assertBool "Failed to load write test file if here" True
+    

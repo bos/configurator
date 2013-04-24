@@ -29,6 +29,8 @@ module Data.Configurator.Types.Internal
     , exact
     , prefix
     , ChangeHandler
+    , FileEntry(..)
+    , ConfigFile
     ) where
 
 import Control.Exception
@@ -214,3 +216,14 @@ data Value = Bool Bool
 data Interpolate = Literal Text
                  | Interpolate Text
                    deriving (Eq, Show)
+
+-- | Single entry of a desired configuration to be written to file.
+data FileEntry = FComment Text
+               | FNewline
+               | FImport Path
+               | FBind Name Text
+               | FGroup Name ConfigFile -- arbitrary grouping
+               deriving (Eq)
+
+-- | Representation of a configuration file for writing to disk.
+type ConfigFile = [FileEntry]
