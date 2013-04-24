@@ -172,7 +172,7 @@ testConfig =
     [ FComment "This is a test comment"
     , FComment "And here is a new one"
     , FNewline
-    , FImport "File/DummyConfigDir/Conf.config"
+    , FImport "pathological.cfg"
     , FBind "myBindVar" "\"here's my bind string\""
     , FBind "myInt" "32 # This is a trailing comment as part of a bind"
     , FComment "Ok, let's try a group now"
@@ -182,7 +182,7 @@ testConfig =
         , FBind "group1b" "90"
         , FGroup "group2"
             [ FComment "I am nested!"
-            , FImport "nested/import.config"
+            , FImport "import.cfg"
             , FBind "group2a" "\"nested var\""
             ]
         , FComment "End the group"
@@ -197,6 +197,6 @@ testConfig =
 writeTest :: Assertion
 writeTest = do
     writeConfigFile "resources/testoutput.cfg" testConfig
-    withLoad [Required "resources/pathological.cfg"] $ \_cfg -> do
+    withLoad [Required "resources/testoutput.cfg"] $ \_cfg -> do
         assertBool "Failed to load write test file if here" True
     
