@@ -56,6 +56,7 @@ module Data.Configurator
     , addToConfig
     , addGroupsToConfig
     -- * Generating a new configuration file
+    -- $output
     , emptyConfigFile
     , addConfigFileComment
     , addConfigFileNewline
@@ -396,23 +397,34 @@ empty = Config "" $ unsafePerformIO $ do
                      , cfgSubs = s
                      }
 
+-- | An empty 'ConfigFile'.
 emptyConfigFile :: ConfigFile
 emptyConfigFile = []
 
+-- | Appends a comment to the 'ConfigFile'.
 addConfigFileComment :: T.Text -> ConfigFile -> ConfigFile
 addConfigFileComment t f = f ++ [FComment t]
 
+-- | Appends a newline to the 'ConfigFile'.
 addConfigFileNewline :: ConfigFile -> ConfigFile
 addConfigFileNewline f = f ++ [FNewline]
 
+-- | Appends an import directive to the 'ConfigFile'.
 addConfigFileImport :: Path -> ConfigFile -> ConfigFile
 addConfigFileImport p f = f ++ [FImport p]
 
+-- | Appends a bind directive to the 'ConfigFile'.
 addConfigFileBind :: Name -> T.Text -> ConfigFile -> ConfigFile
 addConfigFileBind n v f = f ++ [FBind n v]
 
+-- | Appends the first 'ConfigFile' as a named group in the second 'ConfigFile'.
 addConfigFileGroup :: Name -> ConfigFile -> ConfigFile -> ConfigFile
 addConfigFileGroup n sub f = f ++ [FGroup n sub]
+
+-- TODO: Might want to add more value to addConfigFileBind function by
+-- searching for and replacing duplicate bind directives within the
+-- same group.
+
 
 (##) :: T.Text -> T.Text -> T.Text
 (##) = T.append
@@ -420,7 +432,7 @@ addConfigFileGroup n sub f = f ++ [FGroup n sub]
 -- hws is shorthand for horizontal white space
 fileEntryAsText :: T.Text -> FileEntry -> T.Text
 fileEntryAsText hws (FComment c) = hws ## "# " ## c ## "\n"
-fileEntryAsText hws (FNewline) = "\n"
+fileEntryAsText _hws (FNewline) = "\n"
 fileEntryAsText hws (FImport p)  = hws ## "import \"" ## p ## "\"\n"
 fileEntryAsText hws (FBind n v)  = hws ## n ## " = " ## v ## "\n"
 fileEntryAsText hws (FGroup n f) =
@@ -428,10 +440,12 @@ fileEntryAsText hws (FGroup n f) =
         foldl (\acc new -> (##) acc $ fileEntryAsText (hws ## "  ") new) T.empty f ##
         hws ## "}\n"
 
+-- | Converts a 'ConfigFile' type to formatted text.
 configFileText :: ConfigFile -> T.Text
 configFileText [] = T.empty
 configFileText conf = foldl (\acc new -> (##) acc $ fileEntryAsText "" new) T.empty conf
 
+-- | Writes a 'ConfigFile' as a formatted text file at the given 'FilePath'.
 writeConfigFile :: FilePath -> ConfigFile -> IO ()
 writeConfigFile path conf = T.writeFile path $ configFileText conf
 
@@ -574,3 +588,12 @@ writeConfigFile path conf = T.writeFile path $ configFileText conf
 -- reconfigure, a subsystem may ask to be notified when a
 -- configuration property is changed as a result of a reload, using
 -- the 'subscribe' action.
+
+-- $output
+--
+-- Configuration files can be generated algorithmically and written in
+-- the correct format.  A 'ConfigFile' is a list of 'FileEntry'
+-- members, and as such can be manipulated using standard list
+-- functions.  Alternatively, the builder functions 'addConfigFileComment',
+-- 'addConfigFileBind', etc. may be used.
+--
