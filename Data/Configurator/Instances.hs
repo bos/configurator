@@ -91,8 +91,11 @@ instance Configured T.Text where
     convert (String v) = Just v
     convert _          = Nothing
 
-instance Configured [Char] where
-    convert = fmap T.unpack . convert
+instance Configured Char where
+    convert (String txt) | T.length txt == 1 = Just $ T.head txt
+    convert _ = Nothing
+
+    convertList = fmap T.unpack . convert
 
 instance Configured L.Text where
     convert = fmap L.fromStrict . convert

@@ -14,7 +14,7 @@ module Data.Configurator.Types
     , Config
     , Name
     , Value(..)
-    , Configured(..)
+    , Configured, convert
     , Worth(..)
     -- * Exceptions
     , ConfigError(..)
