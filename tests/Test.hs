@@ -18,9 +18,9 @@ import           Data.Text (Text)
 import           Data.Word
 import           System.Directory
 import           System.Environment
+import           System.FilePath
 import           System.IO
 import           Test.HUnit
-import           Paths_configurator
 
 main :: IO ()
 main = runTestTT tests >> return ()
@@ -35,17 +35,17 @@ tests = TestList
     , "reload" ~: reloadTest
     ]
 
-withLoad :: [Worth FilePath] -> (Config -> IO ()) -> IO ()
-withLoad files t = do
-    mb <- try $ load files
+withLoad :: FilePath -> (Config -> IO ()) -> IO ()
+withLoad name t = do
+    mb <- try $ load (testFile name)
     case mb of
         Left (err :: SomeException) -> assertFailure (show err)
         Right cfg -> t cfg
 
-withReload :: [Worth FilePath] -> ([Maybe FilePath] -> Config -> IO ()) -> IO ()
-withReload files t = do
+withReload :: FilePath -> ([Maybe FilePath] -> Config -> IO ()) -> IO ()
+withReload name t = do
     tmp   <- getTemporaryDirectory
-    temps <- forM files $ \f -> do
+    temps <- forM (testFile name) $ \f -> do
         exists <- doesFileExist (worth f)
         if exists
             then do
@@ -61,6 +61,9 @@ withReload files t = do
             Left (err :: SomeException) -> assertFailure (show err)
             Right (cfg, tid) -> t (map snd temps) cfg >> killThread tid
 
+testFile :: FilePath -> [Worth FilePath]
+testFile name = [Required $ "tests" </> "resources" </> name]
+
 takeMVarTimeout :: Int -> MVar a -> IO (Maybe a)
 takeMVarTimeout millis v = do
     w <- newEmptyMVar
@@ -74,9 +77,8 @@ takeMVarTimeout millis v = do
     takeMVar w
 
 loadTest :: Assertion
-loadTest = do
-  fp <- getDataFileName "tests/resources/pathological.cfg"
-  withLoad [Required fp] $ \cfg -> do
+loadTest =
+  withLoad "pathological.cfg" $ \cfg -> do
     aa  <- lookup cfg "aa"
     assertEqual "int property" aa $ (Just 1 :: Maybe Int)
 
@@ -102,9 +104,8 @@ loadTest = do
     assertEqual "deep bool" deep (Just False :: Maybe Bool)
 
 typesTest :: Assertion
-typesTest = do
-  fp <- getDataFileName "tests/resources/pathological.cfg"
-  withLoad [Required fp] $ \ cfg -> do
+typesTest =
+  withLoad "pathological.cfg" $ \cfg -> do
     asInt <- lookup cfg "aa" :: IO (Maybe Int)
     assertEqual "int" asInt (Just 1)
 
@@ -154,15 +155,14 @@ typesTest = do
     assertEqual "char" asChar (Just 'x')
 
 interpTest :: Assertion
-interpTest = do
-  fp <- getDataFileName "tests/resources/pathological.cfg"
-  withLoad [Required fp] $ \ cfg -> do
+interpTest =
+  withLoad "pathological.cfg" $ \cfg -> do
     home    <- getEnv "HOME"
     cfgHome <- lookup cfg "ba"
     assertEqual "home interp" (Just home) cfgHome
 
 scopedInterpTest :: Assertion
-scopedInterpTest = withLoad [Required "resources/interp.cfg"] $ \ cfg -> do
+scopedInterpTest = withLoad "interp.cfg" $ \cfg -> do
     home    <- getEnv "HOME"
 
     lookup cfg "myprogram.exec"
@@ -175,18 +175,16 @@ scopedInterpTest = withLoad [Required "resources/interp.cfg"] $ \ cfg -> do
         >>= assertEqual "nested scope" (Just $ home++"/top/layer1/layer2")
 
 importTest :: Assertion
-importTest = do
-  fp <- getDataFileName "tests/resources/import.cfg"
-  withLoad [Required fp] $ \ cfg -> do
+importTest =
+  withLoad "import.cfg" $ \cfg -> do
     aa  <- lookup cfg "x.aa" :: IO (Maybe Int)
     assertEqual "simple" aa (Just 1)
     acx <- lookup cfg "x.ac.x" :: IO (Maybe Int)
     assertEqual "nested" acx (Just 1)
 
 reloadTest :: Assertion
-reloadTest = do
-  fp <- getDataFileName "tests/resources/pathological.cfg"
-  withReload [Required fp] $ \[Just f] cfg -> do
+reloadTest =
+  withReload "pathological.cfg" $ \[Just f] cfg -> do
     aa <- lookup cfg "aa"
     assertEqual "simple property 1" aa $ Just (1 :: Int)
 

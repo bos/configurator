@@ -87,6 +87,7 @@ test-suite unit-tests
   Build-depends:  configurator,
                   base,
                   directory,
+                  filepath,
                   HUnit,
                   text,
                   attoparsec,
