@@ -38,7 +38,8 @@ description:
 
 extra-source-files:
     README.markdown
-    tests/*.hs
+
+data-files: tests/resources/*.cfg
 
 flag developer
   description: operate in developer mode
@@ -63,7 +64,7 @@ library
     hashable,
     text >= 0.11.1.0,
     unix-compat,
-    unordered-containers	
+    unordered-containers
 
   if flag(developer)
     ghc-options: -Werror
@@ -78,3 +79,19 @@ source-repository head
 source-repository head
   type:     mercurial
   location: http://bitbucket.org/bos/configurator
+
+test-suite test-case-insensitive
+  type:           exitcode-stdio-1.0
+  main-is:        Test.hs
+  hs-source-dirs: tests
+  Build-depends:  configurator,
+                  base,
+                  directory,
+                  HUnit,
+                  text,
+                  attoparsec,
+                  unordered-containers,
+                  unix-compat,
+                  hashable,
+                  bytestring
+  Ghc-options:    -Wall -fno-warn-unused-do-bind

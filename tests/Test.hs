@@ -20,6 +20,7 @@ import           System.Directory
 import           System.Environment
 import           System.IO
 import           Test.HUnit
+import           Paths_configurator
 
 main :: IO ()
 main = runTestTT tests >> return ()
@@ -72,7 +73,9 @@ takeMVarTimeout millis v = do
     takeMVar w
 
 loadTest :: Assertion
-loadTest = withLoad [Required "resources/pathological.cfg"] $ \cfg -> do
+loadTest = do
+  fp <- getDataFileName "tests/resources/pathological.cfg"
+  withLoad [Required fp] $ \cfg -> do
     aa  <- lookup cfg "aa"
     assertEqual "int property" aa $ (Just 1 :: Maybe Int)
 
@@ -98,7 +101,9 @@ loadTest = withLoad [Required "resources/pathological.cfg"] $ \cfg -> do
     assertEqual "deep bool" deep (Just False :: Maybe Bool)
 
 typesTest :: Assertion
-typesTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
+typesTest = do
+  fp <- getDataFileName "tests/resources/pathological.cfg"
+  withLoad [Required fp] $ \ cfg -> do
     asInt <- lookup cfg "aa" :: IO (Maybe Int)
     assertEqual "int" asInt (Just 1)
 
@@ -148,20 +153,26 @@ typesTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
     assertEqual "char" asChar (Just 'x')
 
 interpTest :: Assertion
-interpTest = withLoad [Required "resources/pathological.cfg"] $ \ cfg -> do
+interpTest = do
+  fp <- getDataFileName "tests/resources/pathological.cfg"
+  withLoad [Required fp] $ \ cfg -> do
     home    <- getEnv "HOME"
     cfgHome <- lookup cfg "ba"
     assertEqual "home interp" (Just home) cfgHome
 
 importTest :: Assertion
-importTest = withLoad [Required "resources/import.cfg"] $ \ cfg -> do
+importTest = do
+  fp <- getDataFileName "tests/resources/import.cfg"
+  withLoad [Required fp] $ \ cfg -> do
     aa  <- lookup cfg "x.aa" :: IO (Maybe Int)
     assertEqual "simple" aa (Just 1)
     acx <- lookup cfg "x.ac.x" :: IO (Maybe Int)
     assertEqual "nested" acx (Just 1)
 
 reloadTest :: Assertion
-reloadTest = withReload [Required "resources/pathological.cfg"] $ \[Just f] cfg -> do
+reloadTest = do
+  fp <- getDataFileName "tests/resources/pathological.cfg"
+  withReload [Required fp] $ \[Just f] cfg -> do
     aa <- lookup cfg "aa"
     assertEqual "simple property 1" aa $ Just (1 :: Int)
 
