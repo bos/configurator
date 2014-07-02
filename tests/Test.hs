@@ -26,12 +26,13 @@ main :: IO ()
 main = runTestTT tests >> return ()
 
 tests :: Test
-tests = TestList [
-    "load"   ~: loadTest,
-    "types"  ~: typesTest,
-    "interp" ~: interpTest,
-    "import" ~: importTest,
-    "reload" ~: reloadTest
+tests = TestList
+    [ "load"   ~: loadTest
+    , "types"  ~: typesTest
+    , "interp" ~: interpTest
+    , "scoped-interp"  ~: scopedInterpTest
+    , "import" ~: importTest
+    , "reload" ~: reloadTest
     ]
 
 withLoad :: [Worth FilePath] -> (Config -> IO ()) -> IO ()
@@ -159,6 +160,19 @@ interpTest = do
     home    <- getEnv "HOME"
     cfgHome <- lookup cfg "ba"
     assertEqual "home interp" (Just home) cfgHome
+
+scopedInterpTest :: Assertion
+scopedInterpTest = withLoad [Required "resources/interp.cfg"] $ \ cfg -> do
+    home    <- getEnv "HOME"
+
+    lookup cfg "myprogram.exec"
+        >>= assertEqual "myprogram.exec" (Just $ home++"/services/myprogram/myprogram")
+
+    lookup cfg "myprogram.stdout"
+        >>= assertEqual "myprogram.stdout" (Just $ home++"/services/myprogram/stdout")
+
+    lookup cfg "top.layer1.layer2.dir"
+        >>= assertEqual "nested scope" (Just $ home++"/top/layer1/layer2")
 
 importTest :: Assertion
 importTest = do

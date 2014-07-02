@@ -63,11 +63,12 @@ module Data.Configurator
 import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId, forkIO, threadDelay)
 import Control.Exception (SomeException, evaluate, handle, throwIO, try)
-import Control.Monad (foldM, forM, forM_, join, when)
+import Control.Monad (foldM, forM, forM_, join, when, msum)
 import Data.Configurator.Instances ()
 import Data.Configurator.Parser (interp, topLevel)
 import Data.Configurator.Types.Internal
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
+import Data.List (tails)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (mconcat)
 import Data.Ratio (denominator, numerator)
@@ -94,7 +95,7 @@ loadFiles = foldM go H.empty
    go seen path = do
      let rewrap n = const n <$> path
          wpath = worth path
-     path' <- rewrap <$> interpolate wpath H.empty
+     path' <- rewrap <$> interpolate "" wpath H.empty
      ds    <- loadOne (T.unpack <$> path')
      let !seen'    = H.insert path ds seen
          notSeen n = not . isJust . H.lookup n $ seen
@@ -270,7 +271,7 @@ flatten roots files = foldM doPath H.empty roots
         Just ds -> foldM (directive pfx (worth f)) m ds
 
   directive pfx _ m (Bind name (String value)) = do
-      v <- interpolate value m
+      v <- interpolate pfx value m
       return $! H.insert (T.append pfx name) (String v) m
   directive pfx _ m (Bind name value) =
       return $! H.insert (T.append pfx name) value m
@@ -282,17 +283,26 @@ flatten roots files = foldM doPath H.empty roots
             Just ds -> foldM (directive pfx f') m ds
             _       -> return m
 
-interpolate :: T.Text -> H.HashMap Name Value -> IO T.Text
-interpolate s env
+interpolate :: T.Text -> T.Text -> H.HashMap Name Value -> IO T.Text
+interpolate pfx s env
     | "$" `T.isInfixOf` s =
       case T.parseOnly interp s of
         Left err   -> throwIO $ ParseError "" err
         Right xs -> (L.toStrict . toLazyText . mconcat) <$> mapM interpret xs
     | otherwise = return s
  where
+  lookupEnv name = msum $ map (flip H.lookup env) fullnames
+    where fullnames = map (T.intercalate ".")     -- ["a.b.c.x","a.b.x","a.x","x"]
+                    . map (reverse . (name:)) -- [["a","b","c","x"],["a","b","x"],["a","x"],["x"]]
+                    . tails                   -- [["c","b","a"],["b","a"],["a"],[]]
+                    . reverse                 -- ["c","b","a"]
+                    . filter (not . T.null)   -- ["a","b","c"]
+                    . T.split (=='.')         -- ["a","b","c",""]
+                    $ pfx                     -- "a.b.c."
+
   interpret (Literal x)   = return (fromText x)
   interpret (Interpolate name) =
-      case H.lookup name env of
+      case lookupEnv name of
         Just (String x) -> return (fromText x)
         Just (Number r)
             | denominator r == 1 -> return (decimal $ numerator r)
