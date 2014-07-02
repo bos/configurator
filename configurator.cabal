@@ -4,10 +4,11 @@ license:         BSD3
 license-file:    LICENSE
 category:        Configuration, Data
 copyright:       Copyright 2011 MailRank, Inc.
+                 Copyright 2011-2014 Bryan O'Sullivan
 author:          Bryan O'Sullivan <bos@serpentine.com>
 maintainer:      Bryan O'Sullivan <bos@serpentine.com>
 stability:       experimental
-tested-with:     GHC == 7.0.3
+tested-with:     GHC == 7.0, GHC == 7.2, GHC == 7.4, GHC == 7.6, GHC == 7.8
 synopsis:        Configuration management
 cabal-version:   >= 1.8
 homepage:        http://github.com/bos/configurator
@@ -84,17 +85,14 @@ test-suite tests
   type:           exitcode-stdio-1.0
   main-is:        Test.hs
   hs-source-dirs: tests
-  Build-depends:  configurator,
-                  base,
-                  directory,
-                  filepath,
-                  HUnit,
-                  text,
-                  attoparsec,
-                  unordered-containers,
-                  unix-compat,
-                  hashable,
-                  test-framework,
-                  test-framework-hunit,
-                  bytestring
-  Ghc-options:    -Wall -fno-warn-unused-do-bind
+  build-depends:
+    HUnit,
+    base,
+    bytestring,
+    configurator,
+    directory,
+    filepath,
+    test-framework,
+    test-framework-hunit,
+    text
+  ghc-options: -Wall -fno-warn-unused-do-bind
