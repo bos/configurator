@@ -94,5 +94,7 @@ test-suite unit-tests
                   unordered-containers,
                   unix-compat,
                   hashable,
+                  test-framework,
+                  test-framework-hunit,
                   bytestring
   Ghc-options:    -Wall -fno-warn-unused-do-bind

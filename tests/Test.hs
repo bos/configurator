@@ -20,19 +20,21 @@ import           System.Directory
 import           System.Environment
 import           System.FilePath
 import           System.IO
-import           Test.HUnit
+import           Test.Framework
+import           Test.Framework.Providers.HUnit
+import           Test.HUnit hiding (Test)
 
 main :: IO ()
-main = runTestTT tests >> return ()
+main = defaultMain tests
 
-tests :: Test
-tests = TestList
-    [ "load"   ~: loadTest
-    , "types"  ~: typesTest
-    , "interp" ~: interpTest
-    , "scoped-interp"  ~: scopedInterpTest
-    , "import" ~: importTest
-    , "reload" ~: reloadTest
+tests :: [Test]
+tests =
+    [ testCase "load" loadTest
+    , testCase "types" typesTest
+    , testCase "interp" interpTest
+    , testCase "scoped-interp" scopedInterpTest
+    , testCase "import" importTest
+    , testCase "reload" reloadTest
     ]
 
 withLoad :: FilePath -> (Config -> IO ()) -> IO ()
