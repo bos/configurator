@@ -80,7 +80,7 @@ source-repository head
   type:     mercurial
   location: http://bitbucket.org/bos/configurator
 
-test-suite test-case-insensitive
+test-suite unit-tests
   type:           exitcode-stdio-1.0
   main-is:        Test.hs
   hs-source-dirs: tests
