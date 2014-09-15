@@ -416,8 +416,8 @@ empty = Config "" $ unsafePerformIO $ do
 -- > HerList = [1, "foo", off]
 --
 -- A name must begin with a Unicode letter, which is followed by zero
--- or more of a Unicode alphanumeric code point, hyphen \"@-@\", or
--- underscore \"@_@\".
+-- or more of a Unicode alphanumeric code point, hyphen \"@-@\",
+-- underscore \"@_@\", or colon \"@:@\".
 --
 -- Bindings are created or overwritten in the order in which they are
 -- encountered.  It is legitimate for a name to be bound multiple
