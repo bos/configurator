@@ -105,6 +105,15 @@ loadTest =
     deep <- lookup cfg "ag.q-e.i_u9.a"
     assertEqual "deep bool" deep (Just False :: Maybe Bool)
 
+    adcolon <- lookup cfg "a:d"
+    assertEqual "colon identifiers" adcolon (Just False :: Maybe Bool)
+
+    abc <- lookup cfg "a:b:c"
+    assertEqual "multiple colon identifiers" abc (Just "hello" :: Maybe Text)
+
+    c <- lookup cfg "c:"
+    assertEqual "colon identifiers without suffix or space" c (Just 1 :: Maybe Int)
+
 typesTest :: Assertion
 typesTest =
   withLoad "pathological.cfg" $ \cfg -> do

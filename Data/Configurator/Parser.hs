@@ -75,7 +75,7 @@ ident = do
     throw (ParseError "" $ "reserved word (" ++ show n ++ ") used as identifier")
   return n
  where
-  isCont c = isAlphaNum c || c == '_' || c == '-'
+  isCont c = isAlphaNum c || c == '_' || c == '-' || c == ':'
 
 value :: Parser Value
 value = mconcat [
