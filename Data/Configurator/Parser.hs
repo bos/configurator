@@ -34,12 +34,11 @@ topLevel = directives <* skipLWS <* endOfInput
   
 directive :: Parser Directive
 directive =
-  mconcat [
-    string "import" *> skipLWS *> (Import <$> string_)
-  , Bind <$> try (ident <* skipLWS <* char '=' <* skipLWS) <*> value
-  , Group <$> try (ident <* skipLWS <* char '{' <* skipLWS)
-          <*> directives <* skipLWS <* char '}'
-  ]
+  string "import" *> skipLWS *> (Import <$> string_)
+  <|> do
+    ids <- idents
+    skipLWS
+    groupIdents (\n -> bind n <|> group n) ids
 
 directives :: Parser [Directive]
 directives = (skipLWS *> directive <* skipHWS) `sepBy`
@@ -77,6 +76,14 @@ ident = do
  where
   isCont c = isAlphaNum c || c == '_' || c == '-'
 
+idents :: Parser [Name]
+idents = sepBy1 ident (char '.')
+
+groupIdents :: (Name -> Parser Directive) -> [Name] -> Parser Directive
+groupIdents p [n] = p n
+groupIdents p (g:n) = Group g . return <$> groupIdents p n
+groupIdents p [] = p (error "empty ident")
+
 value :: Parser Value
 value = mconcat [
           string "on" *> pure (Bool True)
@@ -88,6 +95,12 @@ value = mconcat [
         , List <$> brackets '[' ']'
                    ((value <* skipLWS) `sepBy` (char ',' <* skipLWS))
         ]
+
+bind :: Name -> Parser Directive
+bind n = char '=' >> skipLWS >> Bind n <$> value
+
+group :: Name -> Parser Directive
+group n = brackets '{' '}' $ Group n <$> directives <* skipLWS
 
 string_ :: Parser Text
 string_ = do
