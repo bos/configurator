@@ -39,6 +39,7 @@ module Data.Configurator
     , autoReloadGroups
     , autoConfig
     , empty
+    , mkEmpty
     -- * Lookup functions
     , lookup
     , lookupDefault
@@ -384,18 +385,25 @@ notifySubscribers BaseConfig{..} m m' subs = H.foldrWithKey go (return ()) subs
     forM_ (matching changedOrGone) $ \(n',v) -> mapM_ (notify p n' v) acts
 
 -- | A completely empty configuration.
+{-# DEPRECATED empty "Modifying empty with, e.g., addToConfig, breaks referential transparency. Use mkEmpty instead." #-}
 empty :: Config
-empty = Config "" $ unsafePerformIO $ do
-          p <- newIORef []
-          m <- newIORef H.empty
-          s <- newIORef H.empty
-          return BaseConfig {
-                       cfgAuto = Nothing
-                     , cfgPaths = p
-                     , cfgMap = m
-                     , cfgSubs = s
-                     }
+empty = Config "" $ unsafePerformIO mkEmptyBase
 {-# NOINLINE empty #-}
+
+mkEmpty :: IO Config
+mkEmpty = Config "" <$> mkEmptyBase
+
+mkEmptyBase :: IO BaseConfig
+mkEmptyBase = do
+  p <- newIORef []
+  m <- newIORef H.empty
+  s <- newIORef H.empty
+  return $ BaseConfig {
+               cfgAuto = Nothing
+             , cfgPaths = p
+             , cfgMap = m
+             , cfgSubs = s
+             }
 
 -- $format
 --
