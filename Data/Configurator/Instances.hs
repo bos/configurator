@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, OverlappingInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Configurator.Instances () where
@@ -105,6 +105,10 @@ instance Configured B.ByteString where
 
 instance Configured LB.ByteString where
     convert = fmap (LB.fromChunks . (:[])) . convert
+
+instance Configured a => Configured [a] where
+    convert (List xs) = mapM convert xs
+    convert _         = Nothing
 
 instance (Configured a, Configured b) => Configured (a,b) where
     convert (List [a,b]) = (,) <$> convert a <*> convert b
