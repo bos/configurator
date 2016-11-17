@@ -160,8 +160,12 @@ interpTest :: Assertion
 interpTest =
   withLoad "pathological.cfg" $ \cfg -> do
     home    <- getEnv "HOME"
+
     cfgHome <- lookup cfg "ba"
     assertEqual "home interp" (Just home) cfgHome
+
+    lookup cfg "xsinterp" >>= 
+      assertEqual "nested home interp" (Just [[home]])
 
 scopedInterpTest :: Assertion
 scopedInterpTest = withLoad "interp.cfg" $ \cfg -> do
