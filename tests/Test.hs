@@ -199,7 +199,7 @@ reloadTest =
     subscribe cfg "dongly" $ \ _ _ -> putMVar dongly ()
     subscribe cfg "wongly" $ \ _ _ -> putMVar wongly ()
     L.appendFile f "\ndongly = 1"
-    r1 <- takeMVarTimeout 2000 dongly
-    assertEqual "notify happened" r1 (Just ())
-    r2 <- takeMVarTimeout 2000 wongly
-    assertEqual "notify not happened" r2 Nothing
+    r1 <- takeMVarTimeout 5000 dongly
+    assertEqual "notify happened" (Just ()) r1
+    r2 <- takeMVarTimeout 5000 wongly
+    assertEqual "notify not happened" Nothing r2
