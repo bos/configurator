@@ -160,8 +160,12 @@ interpTest :: Assertion
 interpTest =
   withLoad "pathological.cfg" $ \cfg -> do
     home    <- getEnv "HOME"
+
     cfgHome <- lookup cfg "ba"
     assertEqual "home interp" (Just home) cfgHome
+
+    lookup cfg "xsinterp" >>= 
+      assertEqual "nested home interp" (Just [[home]])
 
 scopedInterpTest :: Assertion
 scopedInterpTest = withLoad "interp.cfg" $ \cfg -> do
@@ -195,7 +199,7 @@ reloadTest =
     subscribe cfg "dongly" $ \ _ _ -> putMVar dongly ()
     subscribe cfg "wongly" $ \ _ _ -> putMVar wongly ()
     L.appendFile f "\ndongly = 1"
-    r1 <- takeMVarTimeout 2000 dongly
-    assertEqual "notify happened" r1 (Just ())
-    r2 <- takeMVarTimeout 2000 wongly
-    assertEqual "notify not happened" r2 Nothing
+    r1 <- takeMVarTimeout 5000 dongly
+    assertEqual "notify happened" (Just ()) r1
+    r2 <- takeMVarTimeout 5000 wongly
+    assertEqual "notify not happened" Nothing r2

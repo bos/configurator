@@ -270,11 +270,13 @@ flatten roots files = foldM doPath H.empty roots
         Nothing -> return m
         Just ds -> foldM (directive pfx (worth f)) m ds
 
-  directive pfx _ m (Bind name (String value)) = do
-      v <- interpolate pfx value m
-      return $! H.insert (T.append pfx name) (String v) m
-  directive pfx _ m (Bind name value) =
-      return $! H.insert (T.append pfx name) value m
+  directive pfx _ m (Bind name value) = do
+      vs <- interpStrings value
+      return $! H.insert (T.append pfx name) vs m
+    where
+      interpStrings (List vs) = List <$> mapM interpStrings vs
+      interpStrings (String v) = String <$> interpolate pfx v m
+      interpStrings v = return v 
   directive pfx f m (Group name xs) = foldM (directive pfx' f) m xs
       where pfx' = T.concat [pfx, name, "."]
   directive pfx f m (Import path) =
